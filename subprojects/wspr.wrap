@@ -1,0 +1,6 @@
+[wrap-git]
+directory = wspr
+url = https://github.com/Guenael/rtlsdr-wsprd.git
+revision = 1ca9b83dd2562ce9ef2453aacdd5bc3aab982c7d
+patch_directory = wspr
+diff_files = wspr-library.patch

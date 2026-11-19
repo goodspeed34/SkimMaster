@@ -1,0 +1,5 @@
+[wrap-git]
+url = https://github.com/kgoba/ft8_lib.git
+revision = 9fec6ca39886edbf96f4f5e71edc76da5074e871
+patch_directory = ft8_lib
+diff_files = ft8_lib/ft8-windows.patch

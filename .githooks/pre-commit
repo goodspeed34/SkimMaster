@@ -1,0 +1,24 @@
+#!/bin/sh
+# Pre-commit hook: verify staged C/C++ files match .clang-format (Google style).
+# Skips silently when clang-format is unavailable or no C++ files are staged.
+
+if ! command -v clang-format >/dev/null 2>&1; then
+    exit 0
+fi
+
+files=$(git diff --cached --name-only --diff-filter=ACM |
+        grep -E '\.(cpp|cc|cxx|h|hpp|hh|ipp)$' || true)
+
+if [ -z "$files" ]; then
+    exit 0
+fi
+
+failed=0
+for f in $files; do
+    if ! clang-format --dry-run --Werror "$f" 2>/dev/null; then
+        echo "clang-format: $f is not formatted (run: clang-format -i $f)" >&2
+        failed=1
+    fi
+done
+
+exit $failed

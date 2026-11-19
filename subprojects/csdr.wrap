@@ -1,0 +1,9 @@
+[wrap-git]
+url = https://github.com/ha7ilm/csdr.git
+revision = 6ef2a74206887155290a54c7117636f66742f858
+depth = 1
+patch_directory = csdr
+diff_files = csdr/csdr-windows.patch
+
+[provide]
+csdr = csdr_dep

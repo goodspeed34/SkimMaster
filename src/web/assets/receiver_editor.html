@@ -1,0 +1,101 @@
+{% if receiver_error != "" %}<p class="notice notice-warn" role="alert">{{ receiver_error }}</p>{% endif %}
+<div class="table-scroll">
+<table class="cfg-table">
+  <tr><th colspan="5">Configured IQ Sources</th></tr>
+  <tr><th>Receiver</th><th>Driver / Device</th><th>Sample Rate (Hz)</th><th>Enabled</th><th>Actions</th></tr>
+  {% for row in receiver_list %}
+  <tr>
+    <td><b>{{ row.name }}</b></td><td>{{ row.driver }} <span class="mono">{{ row.device }}</span></td>
+    <td class="mono">{{ row.rate }}</td><td>{{ row.enabled }}</td>
+    <td><form method="get" action="/receiver-edit">
+      <button class="btn-native" name="edit" value="{{ row.name }}">Edit</button>
+      <button class="btn-native" name="delete" value="{{ row.name }}">Delete</button>
+    </form></td>
+  </tr>
+  {% endfor %}
+  {% if length(receiver_list) == 0 %}<tr><td colspan="5">No IQ sources configured.</td></tr>{% endif %}
+</table>
+</div>
+<form method="get" action="/receiver-edit" class="action-bar">
+  <button class="btn-native" name="add" value="1">Add Receiver</button>
+</form>
+{% if receiver_action == "delete" %}
+<form method="post" action="/receiver-edit" class="notice notice-warn">
+  <input type="hidden" name="csrf" value="{{ csrf }}">
+  <input type="hidden" name="revision" value="{{ revision }}">
+  <input type="hidden" name="original" value="{{ original }}">
+  <p>Delete <b>{{ original }}</b> and its slice allocations and schedules? Stored receptions are kept.</p>
+  <button class="btn-native" name="action" value="delete">Confirm Delete</button>
+  <a class="btn-native" href="/receiver-edit">Cancel</a>
+</form>
+{% else if receiver_action != "" %}
+{% if length(attached) > 0 %}
+<table class="cfg-table"><tr><th colspan="5">Attached Decoder Slices</th></tr>
+<tr><th>Allocation</th><th>Decoder</th><th>Frequency</th><th>IQ Coverage</th><th>Actions</th></tr>
+{% for slice in attached %}
+<tr><td>{{ slice.label }}</td><td>{{ slice.mode }}</td><td class="mono">{{ slice.reference }}</td><td>{{ slice.coverage }}</td>
+  <td><form method="get" action="/receiver-edit">
+    <input type="hidden" name="edit" value="{{ original }}">
+    <input type="hidden" name="slice_group" value="{{ slice.group }}">
+    <input type="hidden" name="schedule_index" value="{{ slice.schedule }}">
+    <button class="btn-native" name="slice_index" value="{{ slice.index }}">Edit</button>
+  </form></td>
+</tr>
+{% endfor %}
+</table>
+{% endif %}
+{% if receiver_action == "slice-save" %}
+<form method="post" action="/receiver-edit">
+  <input type="hidden" name="csrf" value="{{ csrf }}">
+  <input type="hidden" name="revision" value="{{ revision }}">
+  <input type="hidden" name="original" value="{{ original }}">
+  <input type="hidden" name="slice_group" value="{{ slice_group }}">
+  <input type="hidden" name="slice_index" value="{{ slice_index }}">
+  <input type="hidden" name="schedule_index" value="{{ schedule_index }}">
+  <table class="cfg-table">
+    <tr><th colspan="2">Edit Decoder Slice</th></tr>
+    <tr><td class="label-col"><label for="slice-mode">Mode</label></td><td><select id="slice-mode" name="mode" required>
+      {% for mode in receiver_modes %}<option{% if slice_fields.mode == mode %} selected{% endif %}>{{ mode }}</option>{% endfor %}
+    </select></td></tr>
+    <tr><td class="label-col"><label for="slice-dial">Dial Frequency (Hz)</label></td><td><input id="slice-dial" name="dial_hz" type="number" min="1" max="1000000000000" value="{{ slice_fields.dial_hz }}"> FT8, FT4, WSPR and SSTV</td></tr>
+    <tr><td class="label-col"><label for="slice-center">Slice Center (Hz)</label></td><td><input id="slice-center" name="slice_center" type="number" min="1" max="1000000000000" value="{{ slice_fields.slice_center }}"> CW and RTTY. Blank follows receiver tuning.</td></tr>
+  </table>
+  <div class="action-bar">
+    <button class="btn-native" name="action" value="slice-save">Save Slice</button>
+    <button class="btn-native" name="action" value="slice-delete" formnovalidate>Delete Slice</button>
+  </div>
+</form>
+{% else if receiver_action == "save" %}
+<form method="post" action="/receiver-edit">
+  <input type="hidden" name="csrf" value="{{ csrf }}">
+  <input type="hidden" name="revision" value="{{ revision }}">
+  <input type="hidden" name="original" value="{{ original }}">
+  <input type="hidden" name="action" value="save">
+  <table class="cfg-table">
+    <tr><th colspan="2">{% if original == "" %}Add Receiver{% else %}Edit Receiver{% endif %}</th></tr>
+    <tr><td class="label-col"><label for="receiver">IQ Source Name</label></td><td><input id="receiver" name="receiver" value="{{ fields.receiver }}" required></td></tr>
+    <tr><td class="label-col">Discovery</td><td><!-- receiver probe --></td></tr>
+    <tr><td class="label-col"><label for="device">Device Parameter</label></td><td><input id="device" name="device" size="42" value="{{ fields.device }}" required><br><span class="hint-inline">Select a discovered device or enter its parameter, such as <code>driver=airspyhf</code>, <code>rtltcp:host:1234</code>, <code>alsa:hw:1,0</code> or <code>wav:recording.wav</code>.</span></td></tr>
+    <tr><td class="label-col"><label for="rate">Sample Rate (Hz)</label></td><td><input id="rate" name="rate" type="number" value="{{ fields.rate }}" min="12000" max="6144000" required></td></tr>
+    <tr><td class="label-col"><label for="center_hz">RF Center (Hz)</label></td><td><input id="center_hz" name="center_hz" type="number" min="1" max="1000000000000" value="{{ fields.center_hz }}"></td></tr>
+    <tr><td class="label-col">Enabled</td><td><label><input name="enabled" type="checkbox"{% if fields.enabled %} checked{% endif %}> Enable receiver</label></td></tr>
+    <tr data-live-option><td class="label-col"><label for="gain_db">Gain (dB)</label></td><td><input id="gain_db" name="gain_db" type="number" min="-200" max="200" step="any" value="{{ fields.gain_db }}"> <span class="hint-inline">Optional</span></td></tr>
+    <tr data-live-option><td class="label-col"><label for="ppm">Frequency Correction (PPM)</label></td><td><input id="ppm" name="ppm" type="number" min="-1000" max="1000" step="any" value="{{ fields.ppm }}"> <span class="hint-inline">Optional</span></td></tr>
+    <tr data-wav-option><td class="label-col">WAV Playback</td><td><label><input name="repeat" type="checkbox"{% if fields.repeat %} checked{% endif %}> Repeat WAV playback</label><br><label>Start time (Unix UTC milliseconds, optional) <input name="utc_ms" type="number" min="0" max="100000000000000" value="{{ fields.utc_ms }}"></label></td></tr>
+    <tr><td class="label-col"><label for="mode">Attach Decoder Slice</label></td><td><select id="mode" name="mode">
+      <option value="">None</option>
+      {% for mode in receiver_modes %}<option{% if fields.mode == mode %} selected{% endif %}>{{ mode }}</option>{% endfor %}
+    </select> <span class="hint-inline">Save to attach this slice. It activates when its full bandwidth fits the IQ source.</span></td></tr>
+    <tr data-dial-option><td class="label-col"><label for="dial_hz">Dial Frequency (Hz)</label></td><td><input id="dial_hz" name="dial_hz" type="number" min="1" max="1000000000000" value="{{ fields.dial_hz }}"></td></tr>
+    <tr data-slice-center><td class="label-col"><label for="slice_center">Slice Center (Hz)</label></td><td><input id="slice_center" name="slice_center" type="number" min="1" max="1000000000000" value="{{ fields.slice_center }}"> <span class="hint-inline">Blank follows receiver tuning.</span></td></tr>
+  </table>
+  <div class="action-bar"><button class="btn-native">Save Receiver</button>
+    <button class="btn-native" type="button" data-capture-test>Test Configuration</button>
+    <a class="btn-native" href="/receiver-edit">Cancel</a>
+    {% if original != "" %}<a class="btn-native" href="/band-schedules">Band Schedules</a>{% endif %}
+    <span role="status" data-capture-status></span>
+  </div>
+</form>
+<script src="/receivers.js" defer></script>
+{% endif %}
+{% endif %}

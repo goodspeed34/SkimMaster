@@ -1,0 +1,9 @@
+--- a/libcsdr.c
++++ b/libcsdr.c
+@@ -2502,5 +2502,5 @@ void plain_interpolate_cc(complexf* input, complexf* output, int input_size, int
+     {
+         output[i*interpolation]=input[i];
+-        bzero(output+(interpolation*i)+1, (interpolation-1)*sizeof(complexf));
++        memset(output+(interpolation*i)+1, 0, (interpolation-1)*sizeof(complexf));
+     }
+ }

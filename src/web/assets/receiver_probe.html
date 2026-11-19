@@ -1,0 +1,11 @@
+<div class="action-bar" data-receiver-probe>
+  <label>Driver
+    <select data-probe-driver>
+      {% for driver in drivers %}<option value="{{ driver.0 }}"{% if driver.0 == probe_driver %} selected{% endif %}>{{ driver.1 }}</option>{% endfor %}
+    </select>
+  </label>
+  <label>Probe target <input type="text" data-probe-target size="24"></label>
+  <button type="button" class="btn-native" data-probe-scan>Scan</button>
+  <label data-probe-results hidden>Discovered devices <select data-probe-list></select></label>
+  <p role="status" data-probe-status></p>
+</div>

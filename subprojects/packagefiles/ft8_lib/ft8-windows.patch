@@ -1,0 +1,10 @@
+--- a/ft8/message.c
++++ b/ft8/message.c
+@@ -1101,5 +1101,6 @@
+         if (ir > 0)
+         {
+             // In case of ir=1 add an "R " before grid
+-            dst = stpcpy(dst, "R ");
++            memcpy(dst, "R ", 2);
++            dst += 2;
+         }

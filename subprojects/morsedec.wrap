@@ -1,0 +1,6 @@
+[wrap-git]
+url = https://github.com/goodspeed34/libmorsedec.git
+revision = 8c3937d2b80106b060785fbc2c326e3cb6191d34
+
+[provide]
+morsedec = morsedec_dep

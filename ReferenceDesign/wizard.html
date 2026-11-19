@@ -1,0 +1,490 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Skim Master — Setup Wizard</title>
+<link rel="stylesheet" href="style.css">
+<style>
+  /* Wizard-specific layout only; shared palette and form styles come from style.css */
+  body {
+    padding: 28px 12px;
+    background-color: #D8DEE6;
+  }
+
+  /* 居中向导主窗口（2010 经典 780px 固定宽度盒子） */
+  .wizard-window {
+    width: 780px;
+    max-width: 100%;
+    margin: 0 auto;
+    background: #FFFFFF;
+    border: 1px solid #6E7A8A;
+  }
+
+  /* 顶部 Banner（与主面板同款银白渐变） */
+  .wiz-header {
+    height: 70px;
+    background:
+      repeating-linear-gradient(
+        -45deg,
+        rgba(38, 35, 98, 0.025) 0px,
+        rgba(38, 35, 98, 0.025) 2px,
+        transparent 2px,
+        transparent 5px
+      ),
+      linear-gradient(to bottom, #FFFFFF 0%, #F4F6F9 60%, #DCE1E8 100%);
+    border-bottom: 1px solid #8A95A5;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0 18px;
+  }
+
+  .wiz-tag {
+    border: 1px solid #262362;
+    background: #262362;
+    color: #FFFFFF;
+    font-weight: bold;
+    font-size: 11px;
+    padding: 4px 10px;
+    letter-spacing: 0.5px;
+  }
+
+  .wiz-home {
+    font-size: 11px;
+    color: #262362;
+    text-decoration: underline;
+  }
+
+  /* 步骤条（经典扁平分段指示器） */
+  .step-bar {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    background: #E4E8EF;
+    border-bottom: 2px solid #262362;
+  }
+
+  .step-item {
+    padding: 7px 10px;
+    border-right: 1px solid #B0BAC7;
+    color: #555E68;
+    font-size: 11px;
+    text-align: center;
+    background: linear-gradient(to bottom, #F2F4F8 0%, #DCE1E9 100%);
+  }
+  .step-item:last-child {
+    border-right: none;
+  }
+  .step-item.done {
+    color: #262362;
+    font-weight: bold;
+    background: #EAEEF5;
+  }
+  .step-item.active {
+    background: linear-gradient(to bottom, #35327A 0%, #262362 100%);
+    color: #FFFFFF;
+    font-weight: bold;
+  }
+  .step-item.active span {
+    color: #FF9900;
+  }
+
+  /* 向导正文区 */
+  .wiz-body {
+    padding: 18px 22px;
+    min-height: 330px;
+  }
+
+  .step-pane {
+    display: none;
+  }
+  .step-pane.active {
+    display: block;
+  }
+
+  .step-title {
+    font-size: 14px;
+    font-weight: bold;
+    color: #262362;
+    border-bottom: 1px solid #9AA5B4;
+    padding-bottom: 5px;
+    margin-bottom: 10px;
+  }
+
+  .step-desc {
+    color: #444444;
+    margin-bottom: 14px;
+    background: #F4F6F9;
+    border: 1px solid #CFD6E0;
+    padding: 7px 10px;
+  }
+
+  /* 1px 实线高密度配置表 */
+  table.wiz-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-bottom: 12px;
+  }
+  table.wiz-table th {
+    background: linear-gradient(to bottom, #E8ECF4 0%, #D2DAE6 100%);
+    border: 1px solid #9AA5B4;
+    text-align: left;
+    padding: 5px 8px;
+    color: #1E2430;
+  }
+  table.wiz-table td {
+    border: 1px solid #B8C2CE;
+    padding: 6px 8px;
+  }
+  table.wiz-table td.lbl {
+    width: 34%;
+    background: #F7F9FC;
+    font-weight: bold;
+    color: #333333;
+  }
+
+  input[type="text"] {
+    font-family: Tahoma, Arial, sans-serif;
+    font-size: 12px;
+    padding: 2px 5px;
+    border: 1px solid #7F9DB9;
+    background: #FFFFFF;
+  }
+
+  .hint-inline {
+    color: #666666;
+    font-size: 11px;
+    margin-left: 6px;
+  }
+
+  /* 完成进度条模拟 */
+  .progress-wrap {
+    border: 1px solid #7F9DB9;
+    background: #EEF1F6;
+    height: 18px;
+    padding: 2px;
+    margin-top: 10px;
+    display: none;
+  }
+  .progress-fill {
+    height: 100%;
+    width: 0%;
+    background: repeating-linear-gradient(
+      -45deg,
+      #262362,
+      #262362 8px,
+      #3B378C 8px,
+      #3B378C 16px
+    );
+  }
+
+  /* 底部按钮栏 */
+  .wiz-footer {
+    background: #EEF1F6;
+    border-top: 1px solid #9AA5B4;
+    padding: 10px 18px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  .btn-native {
+    font-family: Tahoma, "SimSun", sans-serif;
+    font-size: 12px;
+    padding: 3px 16px;
+    margin-left: 6px;
+    cursor: pointer;
+  }
+</style>
+</head>
+<body>
+
+<div class="wizard-window">
+  <!-- 顶部 Banner（logo 与主面板同一套锁定资产） -->
+  <div class="wiz-header">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 556 74" width="380" height="50">
+	<g fill="#262362">
+          <path d="M 10,12 H 54 V 20 H 21 V 26 H 54 V 46 H 10 V 38 H 43 V 32 H 10 Z" />
+          <path d="M 62,12 H 73 V 26 L 94,12 H 108 L 85,28 L 109,46 H 94 L 73,31 V 46 H 62 Z" />
+          <path d="M 116,12 H 127 V 46 H 116 Z" />
+          <path d="M 136,12 H 151 L 164,33 L 177,12 H 192 V 46 H 181 V 24 L 168,45 H 160 L 147,24 V 46 H 136 Z" />
+          <path d="M 222,12 H 237 L 250,33 L 263,12 H 278 V 46 H 267 V 24 L 254,45 H 246 L 233,24 V 46 H 222 Z" />
+          <path d="M 303,12 H 319 L 336,46 H 324 L 320,38 H 302 L 298,46 H 286 Z M 305,30 H 317 L 311,19 Z" />
+          <path d="M 343,12 H 387 V 20 H 354 V 26 H 387 V 46 H 343 V 38 H 376 V 32 H 343 Z" />
+          <path d="M 394,12 H 440 V 20 H 423 V 46 H 411 V 20 H 394 Z" />
+          <path d="M 448,12 H 491 V 20 H 459 V 26 H 485 V 33 H 459 V 39 H 491 V 46 H 448 Z" />
+          <path d="M 499,12 H 543 V 32 H 528 L 545,46 H 531 L 516,32 H 510 V 46 H 499 Z M 510,19 V 25 H 532 V 19 Z" />
+	</g>
+	<text x="10" y="64" font-family="Arial, Helvetica, sans-serif" font-size="11.5" font-weight="bold" letter-spacing="4.6" fill="#555E68">MULTI-MODE SPECTRUM DECODER</text>
+      </svg>
+    <div class="wiz-tag">FIRST-TIME SETUP WIZARD</div>
+  </div>
+
+  <!-- 4 步进度指示条 -->
+  <div class="step-bar" id="stepBar">
+    <div class="step-item active"><span>Step 1:</span> Station Identity</div>
+    <div class="step-item"><span>Step 2:</span> IQ Hardware Source</div>
+    <div class="step-item"><span>Step 3:</span> Band &amp; Decoders</div>
+    <div class="step-item"><span>Step 4:</span> Summary &amp; Apply</div>
+  </div>
+
+  <!-- 向导内容区 -->
+  <div class="wiz-body">
+
+    <!-- Step 1: 站台呼号与定位 -->
+    <div class="step-pane active" id="pane-0">
+      <div class="step-title">Step 1 of 4 — Station Callsign &amp; Grid Locator</div>
+      <div class="step-desc">
+        Welcome to <b>Skim Master</b>. Please enter your amateur radio station callsign and Maidenhead grid locator. These parameters will be attached to outbound spots sent to RBN, PSKReporter, and local Telnet clients.
+      </div>
+      <table class="wiz-table">
+        <tr>
+          <th colspan="2">Station Identification</th>
+        </tr>
+        <tr>
+          <td class="lbl">Station Callsign:</td>
+          <td>
+            <input type="text" id="cfgCallsign" value="BG3XXX" size="16" style="text-transform:uppercase;">
+            <span class="hint-inline">(Required for RBN / PSKReporter reporting)</span>
+          </td>
+        </tr>
+        <tr>
+          <td class="lbl">Maidenhead Grid Square:</td>
+          <td>
+            <input type="text" id="cfgGrid" value="OM78" size="10" maxlength="6">
+            <span class="hint-inline">(4 or 6 characters, e.g., OM78 or OM78ab)</span>
+          </td>
+        </tr>
+        <tr>
+          <td class="lbl">Spot Reporting Feeds:</td>
+          <td>
+            <label><input type="checkbox" id="cfgRbn" checked> Reverse Beacon Network (CW / RTTY)</label><br>
+            <label><input type="checkbox" id="cfgPsk" checked> PSKReporter.info (FT8 / FT4 / WSPR)</label><br>
+            <label><input type="checkbox" id="cfgTelnet" checked> Enable Local Telnet DX Cluster (Port 7300)</label>
+          </td>
+        </tr>
+      </table>
+    </div>
+
+    <!-- Step 2: IQ 采样设备配置 -->
+    <div class="step-pane" id="pane-1">
+      <div class="step-title">Step 2 of 4 — SDR Front-End &amp; IQ Stream Setup</div>
+      <div class="step-desc">
+        Select the baseband I/Q audio or network interface connected to your receiver and configure the sampling rate.
+      </div>
+      <table class="wiz-table">
+        <tr>
+          <th colspan="2">IQ Input Hardware</th>
+        </tr>
+        <tr>
+          <td class="lbl">Input Interface Type:</td>
+          <td>
+            <select id="cfgSource">
+              <option value="ALSA Capture (hw:1,0 - PCM1802)">ALSA Audio Device (hw:1,0 — Zero-IF PCM1802)</option>
+              <option value="SoapySDR Local Device">SoapySDR Local Hardware Driver</option>
+              <option value="RTL-TCP / IQ Network Stream">Network IQ Stream (TCP/UDP)</option>
+            </select>
+          </td>
+        </tr>
+        <tr>
+          <td class="lbl">Sample Rate:</td>
+          <td>
+            <select id="cfgRate">
+              <option value="48000">48,000 Hz (48 kHz Span)</option>
+              <option value="96000">96,000 Hz (96 kHz Span)</option>
+              <option value="192000" selected>192,000 Hz (192 kHz Wideband Span)</option>
+            </select>
+          </td>
+        </tr>
+        <tr>
+          <td class="lbl">Channel Polarity:</td>
+          <td>
+            <label><input type="checkbox" id="cfgSwapIq"> Swap I and Q channels (Fix inverted spectrum)</label>
+          </td>
+        </tr>
+      </table>
+    </div>
+
+    <!-- Step 3: 初始监听频段与多模切片 -->
+    <div class="step-pane" id="pane-2">
+      <div class="step-title">Step 3 of 4 — Initial Band Plan &amp; Parallel Decoder Modes</div>
+      <div class="step-desc">
+        Choose the default amateur band and select which digital/CW decoders to spawn simultaneously across the passband.
+      </div>
+      <table class="wiz-table">
+        <tr>
+          <td class="lbl">Default Operating Band:</td>
+          <td>
+            <select id="cfgBand">
+              <option value="40m (LO: 7.074 MHz)">40m Band (7.000 – 7.192 MHz)</option>
+              <option value="20m (LO: 14.096 MHz)" selected>20m Band (14.000 – 14.192 MHz)</option>
+              <option value="15m (LO: 21.096 MHz)">15m Band (21.000 – 21.192 MHz)</option>
+              <option value="10m (LO: 28.096 MHz)">10m Band (28.000 – 28.192 MHz)</option>
+            </select>
+          </td>
+        </tr>
+      </table>
+
+      <table class="wiz-table">
+        <tr>
+          <th style="width:45px;">Enable</th>
+          <th>Decoder Engine</th>
+          <th>Sub-band Allocation</th>
+          <th>Notes</th>
+        </tr>
+        <tr>
+          <td style="text-align:center;"><input type="checkbox" class="mode-chk" value="CW" checked></td>
+          <td><b>CW Skimmer</b></td>
+          <td>Lower 48 kHz CW Segment</td>
+          <td>Multi-channel parallel Morse decoder</td>
+        </tr>
+        <tr>
+          <td style="text-align:center;"><input type="checkbox" class="mode-chk" value="RTTY" checked></td>
+          <td><b>RTTY Engine</b></td>
+          <td>24 kHz Contest Segment</td>
+          <td>45.45 Baud / 170 Hz shift</td>
+        </tr>
+        <tr>
+          <td style="text-align:center;"><input type="checkbox" class="mode-chk" value="FT8" checked></td>
+          <td><b>FT8 Slice</b></td>
+          <td>Standard FT8 Dial (3.2 kHz)</td>
+          <td>15-second T/R cycle</td>
+        </tr>
+        <tr>
+          <td style="text-align:center;"><input type="checkbox" class="mode-chk" value="FT4" checked></td>
+          <td><b>FT4 Slice</b></td>
+          <td>Standard FT4 Dial (3.2 kHz)</td>
+          <td>7.5-second fast contest cycle</td>
+        </tr>
+        <tr>
+          <td style="text-align:center;"><input type="checkbox" class="mode-chk" value="WSPR" checked></td>
+          <td><b>WSPR Slice</b></td>
+          <td>Standard WSPR Dial (200 Hz)</td>
+          <td>2-minute weak-signal propagation</td>
+        </tr>
+      </table>
+    </div>
+
+    <!-- Step 4: 参数汇总与确认启动 -->
+    <div class="step-pane" id="pane-3">
+      <div class="step-title">Step 4 of 4 — Review Settings &amp; Start Decoder Daemon</div>
+      <div class="step-desc">
+        Please verify your configuration below. Click <b>Finish</b> to write <code>/etc/skim-master.conf</code> and launch all selected decoder threads.
+      </div>
+      <table class="wiz-table">
+        <tr>
+          <th colspan="2">Configuration Summary</th>
+        </tr>
+        <tr>
+          <td class="lbl">Station Callsign / Grid:</td>
+          <td id="sumStation">—</td>
+        </tr>
+        <tr>
+          <td class="lbl">IQ Source &amp; Sample Rate:</td>
+          <td id="sumHardware">—</td>
+        </tr>
+        <tr>
+          <td class="lbl">Active Band:</td>
+          <td id="sumBand">—</td>
+        </tr>
+        <tr>
+          <td class="lbl">Enabled Decoder Engines:</td>
+          <td id="sumModes">—</td>
+        </tr>
+      </table>
+
+      <div id="statusMsg" style="color:#262362; font-weight:bold; display:none;">
+        Writing configuration and initializing FFTW wisdom / decoder slices...
+      </div>
+      <div class="progress-wrap" id="progressWrap">
+        <div class="progress-fill" id="progressFill"></div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- 底部向导导航按钮栏 -->
+  <div class="wiz-footer">
+    <div>
+      <button type="button" class="btn-native" style="margin-left:0;" onclick="window.location.href='index.html#system-summary';">Skip Wizard</button>
+      <a class="wiz-home" href="index.html#system-summary" style="margin-left:10px;">Return to Control Panel</a>
+    </div>
+    <div>
+      <button type="button" class="btn-native" id="btnBack" onclick="changeStep(-1)" disabled>&lt; Back</button>
+      <button type="button" class="btn-native" id="btnNext" onclick="changeStep(1)"><b>Next &gt;</b></button>
+      <button type="button" class="btn-native" id="btnFinish" onclick="finishWizard()" style="display:none;"><b>Finish</b></button>
+    </div>
+  </div>
+</div>
+
+<script>
+  let currentStep = 0;
+  const totalSteps = 4;
+
+  function renderStep() {
+    const panes = document.querySelectorAll('.step-pane');
+    const items = document.querySelectorAll('.step-item');
+
+    panes.forEach((p, idx) => {
+      p.classList.toggle('active', idx === currentStep);
+    });
+
+    items.forEach((item, idx) => {
+      item.classList.remove('active', 'done');
+      if (idx < currentStep) item.classList.add('done');
+      if (idx === currentStep) item.classList.add('active');
+    });
+
+    document.getElementById('btnBack').disabled = (currentStep === 0);
+    document.getElementById('btnNext').style.display = (currentStep < totalSteps - 1) ? 'inline-block' : 'none';
+    document.getElementById('btnFinish').style.display = (currentStep === totalSteps - 1) ? 'inline-block' : 'none';
+
+    if (currentStep === totalSteps - 1) {
+      populateSummary();
+    }
+  }
+
+  function populateSummary() {
+    const call = document.getElementById('cfgCallsign').value.trim().toUpperCase() || 'N0CALL';
+    const grid = document.getElementById('cfgGrid').value.trim() || 'AA00';
+    document.getElementById('sumStation').innerHTML = '<b>' + call + '</b> (Grid: <b>' + grid + '</b>)';
+
+    const src = document.getElementById('cfgSource').value;
+    const rate = document.getElementById('cfgRate').value;
+    const swap = document.getElementById('cfgSwapIq').checked ? ' [I/Q Swapped]' : '';
+    document.getElementById('sumHardware').textContent = src + ' @ ' + rate + ' Hz' + swap;
+
+    document.getElementById('sumBand').textContent = document.getElementById('cfgBand').value;
+
+    const modes = Array.from(document.querySelectorAll('.mode-chk:checked')).map(c => c.value);
+    document.getElementById('sumModes').innerHTML = modes.length ? '<b>' + modes.join(', ') + '</b>' : '<span style="color:#CC0000;">None selected</span>';
+  }
+
+  function changeStep(delta) {
+    currentStep = Math.max(0, Math.min(totalSteps - 1, currentStep + delta));
+    renderStep();
+  }
+
+  function finishWizard() {
+    document.getElementById('btnBack').disabled = true;
+    document.getElementById('btnFinish').disabled = true;
+    document.getElementById('statusMsg').style.display = 'block';
+    document.getElementById('progressWrap').style.display = 'block';
+
+    let pct = 0;
+    const fill = document.getElementById('progressFill');
+    const timer = setInterval(() => {
+      pct += 10;
+      fill.style.width = pct + '%';
+      if (pct >= 100) {
+        clearInterval(timer);
+        document.getElementById('statusMsg').textContent = 'Configuration saved! Redirecting to Skim Master Control Panel...';
+        setTimeout(() => {
+          window.location.href = 'index.html#system-summary';
+        }, 400);
+      }
+    }, 120);
+  }
+</script>
+
+</body>
+</html>

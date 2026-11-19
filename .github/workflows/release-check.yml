@@ -1,0 +1,52 @@
+name: Build and verify
+on: [push, pull_request, workflow_dispatch]
+permissions:
+  contents: read
+
+jobs:
+  linux:
+    runs-on: ubuntu-latest
+    container: ubuntu:26.04
+    steps:
+      - name: Install build dependencies
+        run: |
+          apt-get update
+          DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            build-essential git ca-certificates pkg-config meson ninja-build python3 \
+            cmake \
+            libboost-all-dev libnng-dev libfftw3-dev libsqlite3-dev inja-dev \
+            nlohmann-json3-dev libsndfile1-dev libpng-dev libzip-dev libssl-dev \
+            libsoapysdr-dev libasound2-dev
+      - uses: actions/checkout@v4
+      - name: Build, test and install
+        run: |
+          meson setup build --buildtype=release --force-fallback-for=csdr,morsedec --prefix=/opt/SkimMaster
+          meson compile -C build
+          meson test -C build --print-errorlogs --suite SkimMaster
+          meson install -C build --no-rebuild
+          python3 tests/wav_receiver.py /opt/SkimMaster/bin/SkimMasterTools /opt/SkimMaster/bin/SkimMaster subprojects/ft8_lib/test/wav/191111_110130.wav
+
+  windows:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: CLANG64
+          update: true
+          install: git
+          pacboy: >-
+            toolchain:p meson:p ninja:p pkgconf:p cmake:p boost:p nng:p fftw:p
+            sqlite:p inja:p nlohmann-json:p libsndfile:p libpng:p libzip:p
+            openssl:p soapysdr:p python:p
+      - name: Build, test and install
+        run: |
+          meson setup build --buildtype=release --force-fallback-for=csdr,morsedec --prefix="$(cygpath -m "$RUNNER_TEMP")/SkimMaster"
+          meson compile -C build
+          meson test -C build --print-errorlogs --suite SkimMaster
+          meson install -C build --no-rebuild
+          installed="$(cygpath -u "$RUNNER_TEMP")/SkimMaster/bin"
+          python tests/wav_receiver.py "$installed/SkimMasterTools.exe" "$installed/SkimMaster.exe" subprojects/ft8_lib/test/wav/191111_110130.wav

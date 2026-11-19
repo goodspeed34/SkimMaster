@@ -1,0 +1,254 @@
+{% if page == "noise-floor" %}
+<p>Unimplemented</p>
+{% else %}
+{% if exists("config_error") %}{% if config_error != "" %}
+<div class="notice notice-warn" role="alert"><b>Station configuration could not be loaded.</b> {{ config_error }} {{ config_recovery_guidance }}</div>
+{% endif %}{% endif %}
+{% if page == "system-summary" %}
+<table class="cfg-table">
+  <tr><th colspan="4">Daemon &amp; Station Information</th></tr>
+  <tr><td class="label-col" style="width:22%;">Station Callsign:</td><td style="width:28%;"><b>{{ callsign }}</b> (Grid: <b>{{ grid }}</b>)</td><td class="label-col" style="width:22%;">System Time (UTC):</td><td style="width:28%;"><b class="mono js-utc">{{ utc }}</b></td></tr>
+  <tr><td class="label-col">Core Engine Version:</td><td>Skim Master v{{ version }}</td><td class="label-col">System Uptime:</td><td>{{ uptime_label }}</td></tr>
+  <tr><td class="label-col">CPU / Memory Load:</td><td>{{ cpu_load }}</td><td class="label-col">Total IQ Throughput:</td><td>{{ iq_throughput }}</td></tr>
+</table>
+<table class="cfg-table">
+  <tr><th colspan="7">Active Receivers Status</th></tr>
+  <tr><th>Receiver Name</th><th>Driver / Source</th><th>Center IF</th><th>Sample BW</th><th>Slices</th><th>Noise Floor</th><th>State</th></tr>
+  {% for row in receiver_status %}<tr>{% for cell in row %}<td>{{ cell }}</td>{% endfor %}</tr>{% endfor %}
+  {% if length(receiver_status) == 0 %}<tr><td colspan="7">No active receivers.</td></tr>{% endif %}
+</table>
+<table class="cfg-table">
+  <tr><th colspan="6">Decoder Engines Activity (24h Window)</th></tr>
+  <tr><th>Mode</th><th>Allocated Slices</th><th>Active Bands</th><th class="num">Spots (Last 1h)</th><th class="num">Spots (24h Total)</th><th class="num">Unique Calls</th></tr>
+  {% for row in decoder_activity %}
+  <tr><td><b>{{ row.0 }}</b></td><td>{{ row.1 }}</td><td>—</td><td class="num mono">{{ row.2 }}</td><td class="num mono">{{ row.3 }}</td><td class="num mono">{{ row.4 }}</td></tr>
+  {% endfor %}
+</table>
+<table class="cfg-table">
+  <tr><th colspan="4">Network Feeds &amp; Cluster Status</th></tr>
+  <tr><td class="label-col" style="width:24%;">Local DX Cluster:</td><td style="width:26%;">{{ feeds.0 }} · <a href="/dx-cluster">Configure</a></td><td class="label-col" style="width:24%;">Reverse Beacon Network:</td><td style="width:26%;">{{ feeds.1 }} · <a href="/rbn">Configure</a></td></tr>
+  <tr><td class="label-col">PSK Reporter:</td><td>{{ feeds.2 }} · <a href="/psk-reporter">Configure</a></td><td class="label-col">WSPRnet Uploader:</td><td>{{ feeds.3 }} · <a href="/psk-reporter#wsprnet-service">Configure</a></td></tr>
+</table>
+{% endif %}
+{% if exists("filters") %}
+<form class="action-bar" method="get">
+<label>{% if page == "system-log" %}Component{% else %}Receiver{% endif %} <input name="receiver" size="15" value="{{ selected_receiver }}"></label>
+{% if page != "system-log" %}<label>Mode <select name="mode"><option value="">All modes</option>{% for m in filter_modes %}<option{% if selected_mode == m %} selected{% endif %}>{{ m }}</option>{% endfor %}</select></label>
+<label>Call prefix <input name="call" size="10" value="{{ call_filter }}"></label>{% endif %}
+{% if page == "live-spot-stream" %}<label><input type="checkbox" name="pause"{% if paused %} checked{% endif %}> Pause stream</label>{% endif %}
+<button class="btn-native">Apply Filters</button> <a href="/{{ page }}">Clear Filters</a>
+<button class="btn-native" name="format" value="csv">Download CSV</button></form>
+{% endif %}
+{% if page == "spectrum-waterfall" %}<form method="get" class="action-bar"><label>IQ source <select name="receiver"><option value="">Latest active source</option>{% for row in spectrum_receivers %}<option{% if selected_receiver == row.0 %} selected{% endif %}>{{ row.0 }}</option>{% endfor %}</select></label> <button class="btn-native">Apply</button> <button type="button" class="btn-native" id="saveSpectrum">Save PNG</button></form>{% endif %}
+{% if exists("chart") %}<canvas id="chart" width="900" height="420" data-chart="{{ chart }}" style="max-width:100%"></canvas><p id="chart-status"></p><script src="/charts.js"></script>{% endif %}
+{% if admin %}
+{% if page == "receiver-edit" %}
+<!-- receiver editor -->
+{% else if page == "band-schedules" %}
+{% if schedule_error != "" %}<p class="notice notice-warn" role="alert">{{ schedule_error }}</p>{% endif %}
+<p class="notice notice-info">Schedules use UTC and run after manual allocations. Lower priority numbers win among overlapping schedules. Run Now overrides receiver tuning for 30 minutes.</p>
+<div class="table-scroll">
+<table class="cfg-table">
+  <tr><th colspan="10">Configured Schedules</th></tr>
+  <tr><th>Schedule</th><th>Receiver</th><th>Start UTC</th><th>End UTC</th><th>Days</th><th>Priority</th><th>RF Center (Hz)</th><th>Slices</th><th>Enabled</th><th>Actions</th></tr>
+  {% for row in schedule_rows %}
+  <tr>
+    <td><b>{{ row.name }}</b>{% if row.overridden %}<br><span class="status-ok">Override active</span>{% endif %}</td>
+    <td>{{ row.receiver }}</td><td class="mono">{{ row.start }}</td><td class="mono">{{ row.end }}</td><td>{{ row.days }}</td>
+    <td class="mono">{{ row.priority }}</td><td class="mono">{{ row.center_hz }}</td><td class="mono">{{ row.slice_count }}</td>
+    <td>{% if row.enabled %}Yes{% else %}No{% endif %}</td>
+    <td>
+      <form action="/band-schedules" method="get">
+        <input type="hidden" name="receiver" value="{{ row.receiver }}">
+        <button class="btn-native" name="index" value="{{ row.index }}">Edit</button>
+      </form>
+      {% if row.can_run %}<form action="/band-schedules" method="post">
+        <input type="hidden" name="csrf" value="{{ csrf }}">
+        <input type="hidden" name="revision" value="{{ revision }}">
+        <input type="hidden" name="receiver" value="{{ row.receiver }}">
+        <input type="hidden" name="index" value="{{ row.index }}">
+        {% if row.overridden %}<button class="btn-native" name="action" value="clear">Clear Override</button>
+        {% else %}<button class="btn-native" name="action" value="run">Run Now</button>{% endif %}
+      </form>{% endif %}
+    </td>
+  </tr>
+  {% endfor %}
+  {% if length(schedule_rows) == 0 %}<tr><td colspan="10">No schedules configured.</td></tr>{% endif %}
+</table>
+</div>
+{% if length(sources) > 0 %}
+<form action="/band-schedules" method="get" class="action-bar">
+  <label>Receiver <select name="receiver">
+    {% for source in sources %}<option{% if selected == source %} selected{% endif %}>{{ source }}</option>{% endfor %}
+  </select></label>
+  <button class="btn-native">Add Schedule</button>
+</form>
+{% else %}<p><a href="/receiver-edit">Add a receiver</a> to configure its schedules.</p>{% endif %}
+{% if editing_schedule %}
+<form method="post" action="/band-schedules">
+  <input type="hidden" name="csrf" value="{{ csrf }}">
+  <input type="hidden" name="revision" value="{{ revision }}">
+  <input type="hidden" name="receiver" value="{{ selected }}">
+  <input type="hidden" name="index" value="{{ schedule_index }}">
+  <table class="cfg-table">
+    <tr><th colspan="2">{% if schedule_index == "" %}Add Schedule{% else %}Edit Schedule{% endif %} · {{ selected }}</th></tr>
+    <tr><td class="label-col"><label for="schedule-name">Name</label></td><td><input id="schedule-name" name="name" maxlength="128" value="{{ schedule_fields.name }}"></td></tr>
+    <tr><td class="label-col"><label for="schedule-start">Start UTC</label></td><td><input id="schedule-start" name="start" type="time" value="{{ schedule_fields.start }}" required></td></tr>
+    <tr><td class="label-col"><label for="schedule-end">End UTC</label></td><td><input id="schedule-end" name="end" type="time" value="{{ schedule_fields.end }}" required> Equal times run all day.</td></tr>
+    <tr><td class="label-col">Active Days</td><td>
+      {% for day in weekdays %}<label><input type="checkbox" name="{{ day.key }}"{% if day.checked %} checked{% endif %}> {{ day.label }}</label> {% endfor %}
+    </td></tr>
+    <tr><td class="label-col"><label for="schedule-center">RF Center (Hz)</label></td><td><input id="schedule-center" name="center_hz" type="number" min="1" max="1000000000000" value="{{ schedule_fields.center_hz }}" required></td></tr>
+    <tr><td class="label-col"><label for="schedule-priority">Priority</label></td><td><input id="schedule-priority" name="priority" type="number" min="-2147483648" max="2147483647" value="{{ schedule_fields.priority }}" required></td></tr>
+    <tr><td class="label-col">Enabled</td><td><label><input name="enabled" type="checkbox"{% if schedule_fields.enabled %} checked{% endif %}> Enable schedule</label></td></tr>
+    <tr><td class="label-col"><label for="schedule-mode">Attach Decoder Slice</label></td><td><select id="schedule-mode" name="mode">
+      <option value="">None</option>
+      {% for mode in receiver_modes %}<option{% if schedule_fields.mode == mode %} selected{% endif %}>{{ mode }}</option>{% endfor %}
+    </select></td></tr>
+    <tr><td class="label-col"><label for="schedule-dial">Dial Frequency (Hz)</label></td><td><input id="schedule-dial" name="dial_hz" type="number" min="1" max="1000000000000" value="{{ schedule_fields.dial_hz }}"> FT8, FT4, WSPR and SSTV</td></tr>
+    <tr><td class="label-col"><label for="schedule-slice-center">Slice Center (Hz)</label></td><td><input id="schedule-slice-center" name="slice_center" type="number" min="1" max="1000000000000" value="{{ schedule_fields.slice_center }}"> CW and RTTY. Blank follows receiver tuning.</td></tr>
+  </table>
+  <div class="action-bar">
+    <button class="btn-native" name="action" value="save">Save Schedule</button>
+    {% if schedule_index != "" %}
+    <button class="btn-native" name="action" value="duplicate" formnovalidate>Duplicate</button>
+    <button class="btn-native" name="action" value="delete" formnovalidate>Delete Schedule</button>
+    <a class="btn-native" href="{{ manage_slices_url }}">Manage Slices</a>
+    {% endif %}
+    <a class="btn-native" href="/band-schedules">Cancel</a>
+  </div>
+</form>
+{% endif %}
+{% else if page == "backup-restore" %}
+<p>Download a ZIP snapshot of the station database and SSTV gallery.</p>
+<form method="post" action="/backup"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="btn-native">Download station snapshot</button></form>
+{% else if page == "restart-daemon" %}
+<form method="post" action="/restart"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="btn-native">Restart all workers</button></form>
+{% else %}
+<form method="post" action="/settings"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="revision" value="{{ revision }}">
+<label>Station TOML<br><textarea name="config" rows="22" cols="72">{{ config }}</textarea></label><br><button class="btn-native">Save settings</button></form>
+{% endif %}
+{% else %}{% if exists("service_cards") %}
+{% if service_notice != "" %}<p class="notice notice-ok" role="status">{{ service_notice }}</p>{% endif %}
+{% if service_error != "" %}<p class="notice notice-warn" role="alert">{{ service_error }}</p>{% endif %}
+<p class="notice notice-info">Service settings are opt-in. Saving a change reloads the affected worker through the station supervisor.</p>
+{% for service in service_cards %}
+<section id="{{ service.service }}-service">
+<table class="cfg-table">
+  <tr><th colspan="4">{{ service.label }} Status</th></tr>
+  <tr><th>Configuration</th><th>Worker status</th><th>Recorded report receipts</th><th>Last receipt (UTC)</th></tr>
+  <tr><td>{% if service.enabled %}Enabled{% else %}Disabled{% endif %}</td><td>{{ service.worker_status }}</td><td class="mono">{{ service.receipts }}</td><td class="mono">{{ service.last_receipt }}</td></tr>
+</table>
+<form method="post" action="/service">
+  <input type="hidden" name="csrf" value="{{ csrf }}">
+  <input type="hidden" name="revision" value="{{ revision }}">
+  <input type="hidden" name="service" value="{{ service.service }}">
+  <table class="cfg-table">
+    <tr><th colspan="2">{{ service.label }} Settings</th></tr>
+    <tr><td class="label-col">Enabled</td><td><label><input name="enabled" type="checkbox"{% if service.enabled %} checked{% endif %}> Enable this service</label></td></tr>
+    <tr><td class="label-col"><label for="{{ service.service }}-callsign">Callsign override</label></td><td><input id="{{ service.service }}-callsign" name="callsign" maxlength="16" value="{{ service.callsign }}" placeholder="{{ service.call_fallback }}"> Effective callsign: <b>{{ service.effective_call }}</b></td></tr>
+    <tr><td class="label-col"><label for="{{ service.service }}-grid">Grid override</label></td><td><input id="{{ service.service }}-grid" name="grid" maxlength="6" value="{{ service.grid }}" placeholder="{{ service.grid_fallback }}"> Effective grid: <b>{{ service.effective_grid }}</b></td></tr>
+    {% if service.kind == "cluster" %}
+    <tr><td class="label-col"><label for="cluster-port">Loopback port</label></td><td><input id="cluster-port" name="port" type="number" min="1" max="65535" value="{{ service.port }}"> Blank uses the default port 7300. Local endpoint: <span class="mono">127.0.0.1:{{ service.endpoint_display }}</span></td></tr>
+    {% else if service.kind == "psk" %}
+    <tr><td class="label-col"><label for="psk-host">Server host</label></td><td><input id="psk-host" name="host" value="{{ service.host }}" maxlength="253"> Blank uses report.pskreporter.info.</td></tr>
+    <tr><td class="label-col"><label for="psk-port">Server port</label></td><td><input id="psk-port" name="port" type="number" min="1" max="65535" value="{{ service.port }}"> Blank uses port 4739.</td></tr>
+    {% else if service.kind == "rbn" %}
+    <tr><td class="label-col"><label for="rbn-host">Server host</label></td><td><input id="rbn-host" name="host" value="{{ service.host }}" maxlength="253"> Blank uses x.reversebeacon.net.</td></tr>
+    <tr><td class="label-col"><label for="rbn-port">Primary port</label></td><td><input id="rbn-port" name="port" type="number" min="1" max="65535" value="{{ service.port }}"> Blank uses port 88.</td></tr>
+    <tr><td class="label-col"><label for="rbn-backup-port">Backup port</label></td><td><input id="rbn-backup-port" name="backup_port" type="number" min="1" max="65535" value="{{ service.backup_port }}"> Blank uses port 80.</td></tr>
+    <tr><td class="label-col"><label for="rbn-sign-in">RBN sign-in</label></td><td><input id="rbn-sign-in" name="sign_in" maxlength="254" value="{{ service.sign_in }}" placeholder="{{ service.sign_in_fallback }}"></td></tr>
+    <tr><td class="label-col"><label for="rbn-band-limits">Band limits</label></td><td><input id="rbn-band-limits" name="band_limits" maxlength="512" value="{{ service.band_limits }}" placeholder="Example: 1800-2000,3500-4000"> Comma-separated kHz ranges; required to enable RBN.</td></tr>
+    {% else if service.kind == "wsprnet" %}
+    <tr><td class="label-col"><label for="wsprnet-endpoint">HTTP endpoint</label></td><td><input id="wsprnet-endpoint" name="endpoint" type="url" value="{{ service.endpoint }}" maxlength="512"> Blank uses https://wsprnet.org.</td></tr>
+    {% endif %}
+  </table>
+  <div class="action-bar"><button class="btn-native">Save Service Settings</button></div>
+</form>
+{% if service.enabled %}<form method="post" action="/service-restart" class="action-bar">
+  <input type="hidden" name="csrf" value="{{ csrf }}">
+  <input type="hidden" name="service" value="{{ service.service }}">
+  <button class="btn-native">Restart this service worker</button>
+</form>{% endif %}
+</section>
+{% endfor %}
+{% else if gallery %}
+{% if gallery_notice != "" %}<p class="notice notice-ok" role="status">{{ gallery_notice }}</p>{% endif %}
+{% if gallery_error != "" %}<p class="notice notice-warn" role="alert">{{ gallery_error }}</p>{% endif %}
+<form method="get" action="/sstv-gallery" class="action-bar">
+  <label>Mode <select name="mode"><option value=""{% if gallery_mode == "" %} selected{% endif %}>All modes</option>
+    <option value="Martin1"{% if gallery_mode == "Martin1" %} selected{% endif %}>Martin 1</option>
+    <option value="Martin2"{% if gallery_mode == "Martin2" %} selected{% endif %}>Martin 2</option>
+    <option value="Scottie1"{% if gallery_mode == "Scottie1" %} selected{% endif %}>Scottie 1</option>
+    <option value="Scottie2"{% if gallery_mode == "Scottie2" %} selected{% endif %}>Scottie 2</option>
+    <option value="Robot36"{% if gallery_mode == "Robot36" %} selected{% endif %}>Robot 36</option>
+    <option value="Robot72"{% if gallery_mode == "Robot72" %} selected{% endif %}>Robot 72</option>
+  </select></label>
+  <label>From UTC <input type="date" name="from" value="{{ gallery_from }}"></label>
+  <label>Through UTC <input type="date" name="to" value="{{ gallery_to }}"></label>
+  <button class="btn-native">Apply Filters</button> <a href="/sstv-gallery">Clear Filters</a>
+  <button class="btn-native" name="format" value="csv">Download CSV Index</button>
+</form>
+<div class="table-scroll">
+<table class="cfg-table gallery-table">
+  <tr><th>Image</th><th>Mode</th><th>Captured UTC</th><th>Size (bytes)</th><th>Action</th></tr>
+  {% for image in gallery_rows %}
+  <tr>
+    <td><a href="/image/{{ image.name }}"><img src="/image/{{ image.name }}" class="sstv-thumb" alt="Received SSTV image"></a></td>
+    <td>{{ image.mode }}</td><td class="mono">{{ image.captured }}</td><td class="mono">{{ image.bytes }}</td>
+    <td><form method="post" action="/gallery-delete" onsubmit="return confirm('Delete this SSTV image?')">
+      <input type="hidden" name="csrf" value="{{ csrf }}">
+      <input type="hidden" name="filename" value="{{ image.name }}">
+      <input type="hidden" name="mode" value="{{ gallery_mode }}">
+      <input type="hidden" name="from" value="{{ gallery_from }}">
+      <input type="hidden" name="to" value="{{ gallery_to }}">
+      <button class="btn-native">Delete</button>
+    </form></td>
+  </tr>
+  {% endfor %}
+  {% if gallery_empty %}<tr><td colspan="5">No SSTV images match these filters.</td></tr>{% endif %}
+</table>
+</div>
+{% else if page == "cw-skimmer" or page == "rtty-skimmer" or page == "digital-decoders" %}
+<p class="notice notice-info">Recorded IQ playback results can appear here, but are excluded from public reporting.</p>
+<div class="table-scroll">
+<table class="cfg-table">
+  <tr><th colspan="5">Active Allocations</th></tr>
+  <tr><th>Receiver</th><th>Mode</th><th>Slice Center (Hz)</th><th>Status</th><th>Settings</th></tr>
+  {% for row in allocation_rows %}
+  <tr><td>{{ row.receiver }}</td><td>{{ row.mode }}</td><td class="mono">{{ row.frequency }}</td><td>{{ row.status }}</td><td><a class="btn-native" href="{{ row.manage_url }}">Manage Slices</a></td></tr>
+  {% endfor %}
+  {% if allocation_empty %}<tr><td colspan="5">No active slices for this mode.</td></tr>{% endif %}
+</table>
+</div>
+<form method="get" action="/{{ page }}" class="action-bar">
+  <label>Receiver <select name="receiver"><option value=""{% if selected_receiver == "" %} selected{% endif %}>All receivers</option>{% for source in allocation_sources %}<option value="{{ source }}"{% if selected_receiver == source %} selected{% endif %}>{{ source }}</option>{% endfor %}</select></label>
+  {% if decoder_mode_filter %}<label>Mode <select name="mode"><option value=""{% if selected_mode == "" %} selected{% endif %}>All digital modes</option><option value="FT8"{% if selected_mode == "FT8" %} selected{% endif %}>FT8</option><option value="FT4"{% if selected_mode == "FT4" %} selected{% endif %}>FT4</option><option value="WSPR"{% if selected_mode == "WSPR" %} selected{% endif %}>WSPR</option></select></label>{% endif %}
+  <label><input type="checkbox" name="pause"{% if paused %} checked{% endif %}> Pause refresh</label>
+  <button class="btn-native">Apply Filters</button> <a href="/{{ page }}">Clear Filters</a>
+  <button class="btn-native" name="format" value="csv">Download CSV</button>
+</form>
+<table class="cfg-table">
+  <tr><th colspan="{{ length(columns) }}">{{ table_title }}</th></tr>
+  <tr>{% for label in columns %}<th>{{ label }}</th>{% endfor %}</tr>
+  {% for row in recent_rows %}<tr>{% for cell in row %}<td class="mono">{{ cell }}</td>{% endfor %}</tr>{% endfor %}
+  {% if recent_empty %}<tr><td colspan="{{ length(columns) }}">No stored decoder results match these filters.</td></tr>{% endif %}
+</table>
+{% else %}{% if page == "receiver-status" %}<div class="table-scroll">{% endif %}
+<table class="cfg-table"><thead>{% if exists("table_title") %}<tr><th colspan="{{ length(columns) }}">{{ table_title }}</th></tr>{% endif %}<tr>{% for label in columns %}<th>{{ label }}</th>{% endfor %}</tr></thead>
+<tbody>{% for row in rows %}<tr>{% for cell in row %}<td class="mono">{{ cell }}</td>{% endfor %}</tr>{% endfor %}</tbody></table>
+{% if page == "receiver-status" %}</div><p><a href="/receiver-edit">Add / Edit Receiver</a></p>{% endif %}
+{% if page == "slice-allocation" %}
+<form method="get" action="/receiver-edit" class="action-bar">
+  {% if length(allocation_sources) > 0 %}
+  <label>Receiver <select name="edit">
+    {% for source in allocation_sources %}<option>{{ source }}</option>{% endfor %}
+  </select></label>
+  <button class="btn-native">Manage Slices</button>
+  {% endif %}
+  <a class="btn-native" href="/band-schedules">Band Schedules</a>
+</form>
+{% endif %}
+{% endif %}{% endif %}
+{% if empty %}{% if page == "receiver-status" %}<p>No IQ sources configured.</p>{% else %}<p>No receptions recorded.</p>{% endif %}{% endif %}
+{% endif %}

@@ -1,0 +1,664 @@
+* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}
+
+body {
+    font-family: Tahoma, Verdana, "SimSun", Arial, sans-serif;
+    font-size: 12px;
+    color: #222222;
+    background-color: #E5E8EC;
+    line-height: 1.4;
+    min-width: 1080px;
+}
+
+/* 1. 顶部 Banner（NETGEAR 经典银白微渐变 + 45°细斜纹 + 右侧硬件参数角标） */
+.top-banner {
+    height: 76px;
+    width: 100%;
+    background:
+	repeating-linear-gradient(
+            -45deg,
+            rgba(38, 35, 98, 0.025) 0px,
+            rgba(38, 35, 98, 0.025) 2px,
+            transparent 2px,
+            transparent 5px
+	),
+	linear-gradient(to bottom, #FFFFFF 0%, #F4F6F9 60%, #DCE1E8 100%);
+    border-bottom: 1px solid #8A95A5;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0 18px;
+}
+
+.banner-right {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+}
+
+/* 硬件包装盒风格参数徽章（参考 Netgear 54g 角标） */
+.hw-badge {
+    border: 1px solid #262362;
+    background: #FFFFFF;
+    display: flex;
+    flex-direction: column;
+    text-align: center;
+    font-family: Arial, sans-serif;
+}
+.hw-badge-top {
+    background: #262362;
+    color: #FFFFFF;
+    font-size: 11px;
+    font-weight: bold;
+    padding: 2px 8px;
+    letter-spacing: 0.5px;
+}
+.hw-badge-bottom {
+    color: #D65900;
+    font-size: 10px;
+    font-weight: bold;
+    padding: 2px 8px;
+}
+
+.sys-meta {
+    font-size: 11px;
+    color: #444444;
+    text-align: right;
+    line-height: 1.5;
+}
+.sys-meta a {
+    color: #CC0000;
+    text-decoration: underline;
+    font-weight: bold;
+}
+
+/* 2. 顶部二级状态/快捷导航条（类似 Cisco / Netgear 的深色隔离带） */
+.sub-bar {
+    height: 26px;
+    background: linear-gradient(to bottom, #35327A 0%, #262362 100%);
+    border-bottom: 2px solid #FF8800;
+    color: #FFFFFF;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0 18px;
+    font-size: 11px;
+}
+.sub-bar span b {
+    color: #FFCC66;
+}
+
+/* 3. 主体三栏网格骨架（左导航 190px + 中操作区 1fr + 右帮助栏 240px） */
+.main-wrapper {
+    display: grid;
+    grid-template-columns: 190px 1fr 240px;
+    min-height: calc(100vh - 102px);
+    background: #FFFFFF;
+    border-top: 1px solid #FFFFFF;
+}
+
+/* 左侧手风琴树状菜单 */
+.left-nav {
+    background-color: #EEF1F6;
+    border-right: 1px solid #9AA5B4;
+    padding: 8px 0;
+}
+
+.nav-group-title {
+    background: linear-gradient(to bottom, #D6DCE6 0%, #BCC6D4 100%);
+    border-top: 1px solid #9AA5B4;
+    border-bottom: 1px solid #9AA5B4;
+    color: #1F2937;
+    font-weight: bold;
+    padding: 5px 12px;
+    margin-top: 6px;
+    cursor: pointer;
+}
+.nav-group-title:first-child {
+    margin-top: 0;
+}
+
+.nav-list {
+    list-style: none;
+    padding: 4px 0;
+}
+.nav-list li a {
+    display: block;
+    padding: 4px 12px 4px 22px;
+    color: #262362;
+    text-decoration: none;
+    background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='6' height='6'%3E%3Crect x='1' y='1' width='4' height='4' fill='%23262362'/%3E%3C/svg%3E") no-repeat 11px center;
+}
+.nav-list li a:hover {
+    background-color: #DCE3EE;
+    text-decoration: underline;
+}
+.nav-list li.active a {
+    background-color: #262362;
+    color: #FFFFFF;
+    font-weight: bold;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='6' height='6'%3E%3Crect x='1' y='1' width='4' height='4' fill='%23FF8800'/%3E%3C/svg%3E");
+}
+
+/* 中间核心操作与频谱监控区 */
+.center-panel {
+    padding: 14px 18px;
+    background: #FFFFFF;
+}
+
+.page-title {
+    font-size: 14px;
+    font-weight: bold;
+    color: #262362;
+    border-bottom: 2px solid #262362;
+    padding-bottom: 4px;
+    margin-bottom: 12px;
+}
+
+/* 2010 经典 1px 实线高密度数据表格 */
+table.cfg-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-bottom: 14px;
+}
+table.cfg-table th {
+    background: linear-gradient(to bottom, #E8ECF4 0%, #D2DAE6 100%);
+    border: 1px solid #9AA5B4;
+    text-align: left;
+    padding: 5px 8px;
+    color: #1E2430;
+    font-weight: bold;
+}
+table.cfg-table td {
+    border: 1px solid #B8C2CE;
+    padding: 5px 8px;
+    vertical-align: middle;
+}
+table.cfg-table td.label-col {
+    width: 32%;
+    background-color: #F7F9FC;
+    font-weight: bold;
+    color: #333333;
+}
+
+/* 保留原生表单控件质感（仅文本框使用经典 1px 蓝灰边框） */
+input[type="text"] {
+    font-family: Tahoma, Arial, sans-serif;
+    font-size: 12px;
+    padding: 2px 4px;
+    border: 1px solid #7F9DB9;
+    background: #FFFFFF;
+}
+input.ip-oct {
+    width: 34px;
+    text-align: center;
+}
+
+/* 占位区域：嵌入式黑底频谱/瀑布图预览框 */
+.spectrum-placeholder {
+    height: 110px;
+    background: #08121E;
+    border: 1px solid #556270;
+    color: #4ADE80;
+    font-family: "Courier New", monospace;
+    font-size: 11px;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    padding: 6px 8px;
+}
+.spectrum-grid-line {
+    border-top: 1px dashed #1E3A5F;
+    width: 100%;
+    text-align: center;
+    color: #64748B;
+    padding-top: 26px;
+}
+
+/* 底部事务提交按钮栏 */
+.action-bar {
+    background: #EEF1F6;
+    border: 1px solid #B8C2CE;
+    padding: 8px 12px;
+    text-align: center;
+}
+.btn-native {
+    font-family: Tahoma, "SimSun", sans-serif;
+    font-size: 12px;
+    padding: 3px 14px;
+    margin: 0 4px;
+    cursor: pointer;
+}
+
+/* 右侧内联帮助栏（Inline Help Sidebar） */
+.right-help {
+    background-color: #F4F6F9;
+    border-left: 1px solid #9AA5B4;
+    padding: 12px;
+    color: #444444;
+    font-size: 11px;
+}
+.help-header {
+    font-size: 12px;
+    font-weight: bold;
+    color: #262362;
+    border-bottom: 1px solid #B8C2CE;
+    padding-bottom: 4px;
+    margin-bottom: 8px;
+}
+.right-help p {
+    margin-bottom: 8px;
+}
+.right-help b {
+    color: #111111;
+}
+.right-help ul {
+    margin: 0 0 8px 16px;
+}
+.right-help li {
+    margin-bottom: 3px;
+}
+.right-help .help-note {
+    background: #FFF6EA;
+    border: 1px solid #E0A060;
+    color: #5A3A00;
+    padding: 6px 7px;
+    margin-top: 10px;
+}
+
+/* ==========================================================================
+   SPA page routing
+   ========================================================================== */
+.page {
+    display: none;
+}
+.page.active {
+    display: block;
+}
+.page-help {
+    display: none;
+}
+
+/* ==========================================================================
+   Left nav accordion
+   ========================================================================== */
+.nav-group-title {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    user-select: none;
+}
+.nav-toggle {
+    font-family: "Courier New", monospace;
+    font-size: 11px;
+    font-weight: bold;
+    color: #262362;
+    padding: 0 2px;
+}
+.nav-group.collapsed .nav-list {
+    display: none;
+}
+
+/* ==========================================================================
+   Sub-tabs (FT8 / FT4 / WSPR and grouped settings pages)
+   ========================================================================== */
+.subtabs {
+    border-bottom: 1px solid #9AA5B4;
+    margin-bottom: 12px;
+    padding-left: 4px;
+    font-size: 0;
+}
+.subtab {
+    display: inline-block;
+    position: relative;
+    top: 1px;
+    z-index: 1;
+    margin-right: 3px;
+    padding: 4px 16px;
+    font-size: 12px;
+    font-weight: bold;
+    color: #262362;
+    text-decoration: none;
+    background: linear-gradient(to bottom, #E8ECF4 0%, #D2DAE6 100%);
+    border: 1px solid #9AA5B4;
+    border-bottom: none;
+}
+.subtab:hover {
+    background: #EFF2F7;
+    text-decoration: none;
+}
+.subtab.active {
+    top: 0;
+    background: #FFFFFF;
+    color: #111111;
+    border-top: 2px solid #FF8800;
+    padding-top: 3px;
+    border-bottom: 1px solid #FFFFFF;
+}
+.subpane {
+    display: none;
+}
+.subpane.active {
+    display: block;
+}
+
+/* ==========================================================================
+   Tables, text and status utilities
+   ========================================================================== */
+.table-scroll {
+    overflow-x: auto;
+    margin-bottom: 14px;
+}
+.table-scroll table.cfg-table {
+    margin-bottom: 0;
+}
+.mono {
+    font-family: "Courier New", monospace;
+}
+.num {
+    text-align: right;
+}
+.center {
+    text-align: center;
+}
+.nowrap {
+    white-space: nowrap;
+}
+.small {
+    font-size: 11px;
+}
+.hint-inline {
+    color: #666666;
+    font-size: 11px;
+    margin-left: 6px;
+}
+.required {
+    color: #CC0000;
+    font-weight: bold;
+}
+.status-ok {
+    color: #008000;
+    font-weight: bold;
+}
+.status-warn {
+    color: #D65900;
+    font-weight: bold;
+}
+.status-err {
+    color: #CC0000;
+    font-weight: bold;
+}
+.status-idle {
+    color: #888888;
+    font-weight: bold;
+}
+.legend-swatch {
+    display: inline-block;
+    width: 9px;
+    height: 9px;
+    border: 1px solid #556270;
+    margin-right: 4px;
+    vertical-align: -1px;
+}
+.metric-box {
+    display: inline-block;
+    min-width: 118px;
+    border: 1px solid #9AA5B4;
+    background: #F7F9FC;
+    padding: 5px 8px;
+    margin: 0 6px 10px 0;
+    vertical-align: top;
+}
+.metric-box .metric-label {
+    display: block;
+    font-size: 10px;
+    color: #555E68;
+    text-transform: uppercase;
+}
+.metric-box .metric-value {
+    display: block;
+    font-size: 14px;
+    font-weight: bold;
+    color: #262362;
+}
+.metric-box .metric-value.mono {
+    font-size: 13px;
+}
+
+/* ==========================================================================
+   Notices
+   ========================================================================== */
+.notice {
+    border: 1px solid #B8C2CE;
+    background: #F4F6F9;
+    padding: 7px 10px;
+    margin-bottom: 12px;
+}
+.notice-info {
+    border-color: #8A95A5;
+    background: #EEF3F9;
+}
+.notice-warn {
+    border-color: #E0A060;
+    background: #FFF6EA;
+    color: #5A3A00;
+}
+.notice-err {
+    border-color: #C97A7A;
+    background: #FFF0F0;
+    color: #6A0000;
+}
+.notice-ok {
+    border-color: #7FAF7F;
+    background: #F0F8F0;
+    color: #004000;
+}
+
+/* ==========================================================================
+   Plain log view (classic white-background monospace <pre>)
+   ========================================================================== */
+.log-console {
+    height: 320px;
+    overflow: auto;
+    background: #FFFFFF;
+    border: 1px solid #B8C2CE;
+    color: #222222;
+    font-family: "Courier New", monospace;
+    font-size: 12px;
+    line-height: 1.5;
+    margin: 0 0 14px;
+    padding: 6px 8px;
+    white-space: pre;
+}
+.log-console.tall {
+    height: 420px;
+}
+
+/* ==========================================================================
+   Bars, heatmap and pagers
+   ========================================================================== */
+.bar-track {
+    display: inline-block;
+    width: 90px;
+    height: 10px;
+    background: #FFFFFF;
+    border: 1px solid #9AA5B4;
+    vertical-align: middle;
+}
+.bar-fill {
+    display: block;
+    height: 100%;
+    background: #262362;
+}
+.bar-fill.orange {
+    background: #FF8800;
+}
+.bar-fill.green {
+    background: #2E7D32;
+}
+.bar-fill.red {
+    background: #B00020;
+}
+.bar-fill.gray {
+    background: #9AA5B4;
+}
+td.heat-0 {
+    background: #FFFFFF;
+}
+td.heat-1 {
+    background: #E4ECF6;
+}
+td.heat-2 {
+    background: #B9CCE3;
+}
+td.heat-3 {
+    background: #7E9BC4;
+    color: #FFFFFF;
+}
+td.heat-4 {
+    background: #262362;
+    color: #FFFFFF;
+}
+.pager {
+    text-align: right;
+    font-size: 11px;
+    color: #555E68;
+    margin: -6px 0 14px;
+}
+.pager a,
+.pager b {
+    margin: 0 3px;
+    color: #262362;
+}
+.pager b {
+    text-decoration: underline;
+}
+
+/* ==========================================================================
+   Charts and embedded panels
+   ========================================================================== */
+.spectrum-canvas {
+    display: block;
+    width: 100%;
+    height: 150px;
+    background: #08121E;
+    border: 1px solid #556270;
+}
+.waterfall-canvas {
+    display: block;
+    width: 100%;
+    height: 190px;
+    background: #08121E;
+    border: 1px solid #556270;
+    border-top: none;
+}
+.chart-canvas {
+    display: block;
+    width: 100%;
+    height: 230px;
+    background: #FFFFFF;
+    border: 1px solid #9AA5B4;
+}
+.chart-caption {
+    font-family: "Courier New", monospace;
+    font-size: 10px;
+    color: #555E68;
+    padding: 3px 0 10px;
+}
+.map-box {
+    border: 1px solid #9AA5B4;
+    background: #F7F9FC;
+    overflow: hidden;
+    margin-bottom: 14px;
+}
+.map-box svg {
+    display: block;
+    width: 100%;
+    height: auto;
+}
+.scale-key {
+    width: 26px;
+    height: 10px;
+    border: 1px solid #556270;
+    display: inline-block;
+    vertical-align: middle;
+}
+
+/* ==========================================================================
+   SSTV gallery
+   ========================================================================== */
+.gallery-table td {
+    text-align: center;
+    vertical-align: top;
+    padding: 9px 8px;
+}
+.sstv-thumb {
+    width: 100%;
+    max-width: 215px;
+    height: 138px;
+    margin: 0 auto 5px;
+    border: 1px solid #556270;
+    background-color: #222222;
+}
+.sstv-caption {
+    font-size: 11px;
+    color: #444444;
+    line-height: 1.45;
+}
+.sstv-caption .mono {
+    font-size: 11px;
+    color: #262362;
+    font-weight: bold;
+}
+.sstv-1 {
+    background: repeating-linear-gradient(to bottom, #1A2630 0px, #1A2630 3px, #2C3E50 3px, #2C3E50 6px);
+}
+.sstv-2 {
+    background:
+        linear-gradient(to bottom, rgba(255, 255, 255, 0.10) 0%, rgba(0, 0, 0, 0.45) 100%),
+        linear-gradient(to right, #402060 0%, #A04070 55%, #FF8800 100%);
+}
+.sstv-3 {
+    background:
+        repeating-linear-gradient(90deg, #FFFFFF 0px, #FFFFFF 26px, #D9D9D9 26px, #D9D9D9 52px),
+        #EEEEEE;
+}
+.sstv-4 {
+    background:
+        linear-gradient(to bottom, #000000 0%, #000000 22%, #404040 22%, #404040 44%, #808080 44%, #808080 66%, #C0C0C0 66%, #C0C0C0 88%, #FFFFFF 88%, #FFFFFF 100%);
+}
+.sstv-5 {
+    background:
+        repeating-linear-gradient(45deg, #203040 0px, #203040 8px, #FF9900 8px, #FF9900 10px, #203040 10px, #203040 20px);
+}
+.sstv-6 {
+    background: linear-gradient(to right, #FFFFFF 0%, #FFFF00 14%, #00FFFF 28%, #00FF00 42%, #FF00FF 56%, #FF0000 70%, #0000FF 84%, #000000 100%);
+}
+
+/* ==========================================================================
+   Misc field helpers
+   ========================================================================== */
+.radio-list label,
+.check-list label {
+    display: block;
+    padding: 1px 0;
+}
+.action-bar.left {
+    text-align: left;
+}
+.action-bar.right {
+    text-align: right;
+}
+fieldset.cfg-set {
+    border: 1px solid #9AA5B4;
+    margin: 0 0 14px;
+    padding: 8px 10px 2px;
+}
+fieldset.cfg-set legend {
+    font-weight: bold;
+    color: #262362;
+    padding: 0 4px;
+}

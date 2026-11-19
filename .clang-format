@@ -1,0 +1,5 @@
+---
+# Google C++ style, pinned to C++17 (no C++20 constructs).
+BasedOnStyle: Google
+Language: Cpp
+Standard: c++17

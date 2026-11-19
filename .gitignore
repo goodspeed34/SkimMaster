@@ -1,0 +1,12 @@
+# Meson build directory
+/build/
+__pycache__/
+*.py[cod]
+
+# Wrap-downloaded subproject sources; keep the wrap files and packagefiles
+/subprojects/*
+!/subprojects/*.wrap
+!/subprojects/packagefiles/
+
+# Local editor indexes
+/.cache/

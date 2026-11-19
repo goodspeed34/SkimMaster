@@ -1,0 +1,105 @@
+diff --git a/wsprd/wsprd.c b/wsprd/wsprd.c
+index 2b0ba1d..568b61b 100644
+--- a/wsprd/wsprd.c
++++ b/wsprd/wsprd.c
+@@ -324,9 +324,11 @@ void subtract_signal2(float *id,
+     float phi = 0.0;
+     const int nfilt = 360;  // nfilt must be even number.
+ 
+-    float refi[SIGNAL_SAMPLES] = {0}, refq[SIGNAL_SAMPLES] = {0},
+-          ci[SIGNAL_SAMPLES]   = {0}, cq[SIGNAL_SAMPLES]   = {0},
+-          cfi[SIGNAL_SAMPLES]  = {0}, cfq[SIGNAL_SAMPLES]  = {0};
++    float *scratch = calloc(6 * SIGNAL_SAMPLES, sizeof(float));
++    if (!scratch) return;
++    float *refi = scratch, *refq = refi + SIGNAL_SAMPLES,
++          *ci = refq + SIGNAL_SAMPLES, *cq = ci + SIGNAL_SAMPLES,
++          *cfi = cq + SIGNAL_SAMPLES, *cfq = cfi + SIGNAL_SAMPLES;
+ 
+     /******************************************************************************
+      Measured signal:                    s(t)=a(t)*exp( j*theta(t) )
+@@ -409,6 +411,7 @@ void subtract_signal2(float *id,
+             qd[k] = qd[k] - (cfi[j] * refq[i] + cfq[j] * refi[i]) / norm;
+         }
+     }
++    free(scratch);
+     return;
+ }
+ 
+@@ -497,13 +500,17 @@ int wspr_decode(float  *idat,
+     fftwf_complex *fftin, *fftout;
+     fftin  = (fftwf_complex *)fftwf_malloc(sizeof(fftwf_complex) * FFT_SIZE);
+     fftout = (fftwf_complex *)fftwf_malloc(sizeof(fftwf_complex) * FFT_SIZE);
++    if (!fftin || !fftout) {
++        fftwf_free(fftin);
++        fftwf_free(fftout);
++        return -1;
++    }
+     PLAN   = fftwf_plan_dft_1d(FFT_SIZE, fftin, fftout, FFTW_FORWARD, PATIENCE);
+ 
+-    /* Recover FFTW optimization settings */
+-    FILE *fp_fftw_wisdom_file;
+-    if ((fp_fftw_wisdom_file = fopen("fftw_wisdom.dat", "r"))) {  // Open FFTW wisdom
+-        fftwf_import_wisdom_from_file(fp_fftw_wisdom_file);
+-        fclose(fp_fftw_wisdom_file);
++    if (!PLAN) {
++        fftwf_free(fftin);
++        fftwf_free(fftout);
++        return -1;
+     }
+ 
+     /* Hann function */
+@@ -514,8 +521,13 @@ int wspr_decode(float  *idat,
+ 
+     /* FFT output alloc */
+     const int blocks = 4 * floor(samples / FFT_SIZE) - 1;
+-    float ps[FFT_SIZE][blocks];
+-    memset(ps, 0.0, sizeof(float) * FFT_SIZE * blocks);
++    float (*ps)[blocks] = calloc(FFT_SIZE, sizeof(*ps));
++    if (!ps) {
++        fftwf_destroy_plan(PLAN);
++        fftwf_free(fftin);
++        fftwf_free(fftout);
++        return -1;
++    }
+ 
+     /* Main loop starts here */
+     for (int ipass = 0; ipass < options.npasses; ipass++) {
+@@ -654,7 +666,7 @@ int wspr_decode(float  *idat,
+                         for (int k = 0; k < NSYM; k++) {  // Sum over symbols
+                             int ifd = ifr + ((float)k - (float)NBITS) / (float)NBITS * ((float)idrift) / DF;
+                             int kindex = k0 + 2 * k;
+-                            if (kindex < blocks) {
++                            if (kindex >= 0 && kindex < blocks && ifd >= 3 && ifd < FFT_SIZE - 3) {
+                                 float p0 = sqrtf(ps[ifd - 3][kindex]);
+                                 float p1 = sqrtf(ps[ifd - 1][kindex]);
+                                 float p2 = sqrtf(ps[ifd + 1][kindex]);
+@@ -799,7 +811,7 @@ int wspr_decode(float  *idat,
+                         dupe = 1;
+                 }
+ 
+-                if (!dupe) {
++                if (!dupe && uniques < MAX_UNIQUES) {
+                     snprintf(allcalls[uniques], sizeof(allcalls[0]), "%s", callsign);
+                     allfreqs[uniques] = freq;
+                     uniques++;
+@@ -823,6 +835,8 @@ int wspr_decode(float  *idat,
+         }
+     }
+ 
++    free(ps);
++
+     /* Sort the result */
+     qsort(decodes, uniques, sizeof(struct decoder_results), results_snr_desc);
+ 
+@@ -832,11 +846,6 @@ int wspr_decode(float  *idat,
+     fftwf_free(fftin);
+     fftwf_free(fftout);
+ 
+-    if ((fp_fftw_wisdom_file = fopen("fftw_wisdom.dat", "w"))) {
+-        fftwf_export_wisdom_to_file(fp_fftw_wisdom_file);
+-        fclose(fp_fftw_wisdom_file);
+-    }
+-
+     fftwf_destroy_plan(PLAN);
+ 
+     if (options.usehashtable) {

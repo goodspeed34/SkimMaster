@@ -1,0 +1,59 @@
+<form id="receiverForm" data-initial-step="{{ initial_step }}" method="post" action="/wizard">
+  <input type="hidden" name="csrf" value="{{ csrf }}">
+  <input type="hidden" name="revision" value="{{ revision }}">
+  {% if error != "" %}
+  <div class="notice notice-warn" role="alert">
+    <b>Setup could not be saved.</b> {{ error }}
+    {% if error == "configuration changed; reload and retry" %}<a href="/wizard">Reload Setup Wizard</a>{% endif %}
+  </div>
+  {% endif %}
+  <div class="step-pane active" id="pane-0">
+    <div class="step-title">Step 1 of 4 — Station Identity</div>
+    <table class="wiz-table">
+      <tr><th colspan="2">Station Identification</th></tr>
+      <tr><td class="lbl"><label for="callsign">Callsign</label></td><td><input id="callsign" name="callsign" value="{{ callsign }}" maxlength="16" pattern="[A-Za-z0-9\/\-]{2,16}" style="text-transform:uppercase;" required></td></tr>
+      <tr><td class="lbl"><label for="email">Email</label></td><td><input id="email" name="email" type="email" value="{{ email }}" maxlength="254"></td></tr>
+      <tr><td class="lbl"><label for="name">Name</label></td><td><input id="name" name="name" autocomplete="name" value="{{ name }}" maxlength="128"></td></tr>
+      <tr><td class="lbl"><label for="grid">Maidenhead Grid</label></td><td><input id="grid" name="grid" value="{{ grid }}" maxlength="6" pattern="[A-Ra-r]{2}[0-9]{2}([A-Xa-x]{2})?" required></td></tr>
+    </table>
+  </div>
+  <div class="step-pane" id="pane-1">
+    <div class="step-title">Step 2 of 4 — SDR Front-End &amp; IQ Stream Setup</div>
+    <table class="wiz-table">
+      <tr><th colspan="2">IQ Input Hardware</th></tr>
+      <tr><td class="lbl"><label for="receiver">IQ source name</label></td><td><input id="receiver" name="receiver" value="{{ receiver }}" required></td></tr>
+      <tr><td class="lbl">Discovery</td><td><!-- receiver probe --></td></tr>
+      <tr><td class="lbl"><label for="device">Device</label></td><td><input id="device" name="device" value="{{ device }}" placeholder="driver=airspyhf or wav:recording.wav" required></td></tr>
+      <tr><td class="lbl"><label for="rate">Sample Rate (Hz)</label></td><td><input id="rate" type="number" name="rate" value="{{ rate }}" min="12000" max="6144000" required></td></tr>
+      <tr><td class="lbl"><label for="center_hz">Receiver RF Center (Hz)</label></td><td><input id="center_hz" type="number" name="center_hz" value="{{ center_hz }}" min="1"><span class="hint-inline"> Required for CW and RTTY. Use the recording center for IQ WAV.</span></td></tr>
+      <tr><td class="lbl">WAV Playback</td><td><label><input type="checkbox" name="repeat"{% if repeat %} checked{% endif %}> Repeat WAV playback</label><br><label>Start time (Unix UTC milliseconds, optional) <input type="number" name="utc_ms" value="{{ utc_ms }}" min="0"></label></td></tr>
+    </table>
+    <p class="step-desc">Use <code>wav:path/to/recording.wav</code> for a stereo IQ file on the server.</p>
+  </div>
+  <div class="step-pane" id="pane-2">
+    <div class="step-title">Step 3 of 4 — Band &amp; Decoders</div>
+    <p id="tuningHint" class="step-desc"></p>
+    <div id="tuningError" role="alert" class="notice notice-warn" hidden></div>
+    <table class="wiz-table">
+      <tr><th colspan="2">Decoder Slice</th></tr>
+      <tr id="dialRow"{% if mode == "CW" or mode == "RTTY" %} hidden{% endif %}><td class="lbl"><label for="dial_hz">Dial Frequency (Hz)</label></td><td><input id="dial_hz" type="number" name="dial_hz" value="{{ dial_hz }}" min="1"{% if mode == "CW" or mode == "RTTY" %} disabled{% else %} required{% endif %}></td></tr>
+      <tr><td class="lbl"><label for="mode">Decoder</label></td><td><select id="mode" name="mode"><option{% if mode == "FT8" %} selected{% endif %}>FT8</option><option{% if mode == "FT4" %} selected{% endif %}>FT4</option><option{% if mode == "WSPR" %} selected{% endif %}>WSPR</option><option{% if mode == "CW" %} selected{% endif %}>CW</option><option{% if mode == "RTTY" %} selected{% endif %}>RTTY</option><option{% if mode == "SSTV" %} selected{% endif %}>SSTV</option></select></td></tr>
+    </table>
+  </div>
+  <div class="step-pane" id="pane-3">
+    <div class="step-title">Step 4 of 4 — Summary &amp; Apply</div>
+    <table class="wiz-table">
+      <tr><th colspan="2">Station Identification</th></tr>
+      <tr><td class="lbl">Callsign and Grid</td><td id="reviewStation"></td></tr>
+      <tr><td class="lbl">Name</td><td id="reviewName"></td></tr>
+      <tr><td class="lbl">Email</td><td id="reviewEmail"></td></tr>
+      <tr><th colspan="2">IQ Source and Decoder</th></tr>
+      <tr><td class="lbl">IQ Source</td><td id="reviewReceiver"></td></tr>
+      <tr><td class="lbl">Device</td><td id="reviewDevice"></td></tr>
+      <tr><td class="lbl">Capture Rate (Hz)</td><td id="reviewRate"></td></tr>
+      <tr><td class="lbl" id="reviewDecoderLabel">Decoder and Dial (Hz)</td><td id="reviewDecoder"></td></tr>
+    </table>
+    <p class="step-desc">Select Finish to save the station identity and IQ source.</p>
+  </div>
+  <noscript><p>Enable JavaScript for guided setup or use <a href="/receiver-edit">Add / Edit Receiver</a>.</p></noscript>
+</form>
