@@ -72,7 +72,13 @@ with tempfile.TemporaryDirectory() as directory:
                     raise
                 time.sleep(.02)
         reference = (Path(__file__).resolve().parents[1] / "ReferenceDesign")
-        design = (reference / "index.html").read_bytes()
+
+        def source(name):
+            # embed.py reads these in text mode, so the embedded copies always
+            # use LF; normalize so a CRLF checkout still compares equal.
+            return (reference / name).read_bytes().replace(b"\r\n", b"\n")
+
+        design = source("index.html")
         assert re.search(rb"<svg.*?</svg>", design, re.S)[0] in html
         assert b'class="sub-bar"' in html
         assert b'<div class="help-header">Help &amp; Parameter Notes</div>' in html
@@ -88,7 +94,7 @@ with tempfile.TemporaryDirectory() as directory:
         assert b'<p>Unimplemented</p>' in noise
         assert b"Median bin (dBFS)" not in noise
         assert b'canvas id="chart"' in get("/spectrum-waterfall")
-        assert get("/style.css") == (reference / "style.css").read_bytes()
+        assert get("/style.css") == source("style.css")
         assert b"CQ R7IW LN35" in html and b"&lt;antenna&gt;" in html
         assert b"R7IW" in get("/stations")
         assert b"R7IW" not in get("/stations?call=ZZ9")

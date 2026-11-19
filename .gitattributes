@@ -1,0 +1,7 @@
+# Keep text files as LF in the working tree on every platform.
+#
+# embed.py reads the panel and reference assets in text mode, so the copies
+# embedded into the binary always use LF. The panel tests compare those
+# embedded copies byte-for-byte against the source files, which fails if a
+# Windows checkout rewrites them to CRLF.
+* text=auto eol=lf

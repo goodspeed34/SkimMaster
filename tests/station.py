@@ -166,7 +166,12 @@ center_hz = 14080000
             config.write_text(original)
             data=urllib.parse.urlencode({"csrf":csrf,"revision":revision,"config":base}).encode()
             urllib.request.urlopen(urllib.request.Request(url+"/settings",data=data)).close()
-            assert client.recv(1)==b""
+            try:
+                assert client.recv(1)==b""
+            except ConnectionResetError:
+                # Windows resets a connection whose peer was terminated with
+                # data still queued; either signal means the allocation went away.
+                pass
             assert config.read_text() == base
             with urllib.request.urlopen(urllib.request.Request(url)) as page:
                 assert page.geturl().endswith("/wizard")
