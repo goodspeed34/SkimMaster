@@ -44,7 +44,11 @@ jobs:
 
   sanitizers:
     runs-on: ubuntu-latest
-    container: ubuntu:26.04
+    container:
+      image: ubuntu:26.04
+      # ThreadSanitizer needs ASLR disabled through personality(2), which
+      # the default container seccomp profile blocks.
+      options: --security-opt seccomp=unconfined
     strategy:
       fail-fast: false
       matrix:
@@ -71,7 +75,8 @@ jobs:
           meson setup build --force-fallback-for=csdr,morsedec \
             -Db_sanitize=${{ matrix.sanitize }} -Db_lundef=false
           meson compile -C build
-          meson test -C build --print-errorlogs --suite SkimMaster -t 6
+          setarch "$(uname -m)" -R \
+            meson test -C build --print-errorlogs --suite SkimMaster -t 6
           if ls "$RUNNER_TEMP"/san/* >/dev/null 2>&1; then
             cat "$RUNNER_TEMP"/san/*
             exit 1
