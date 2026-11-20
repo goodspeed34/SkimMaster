@@ -161,9 +161,11 @@ center_hz = 14080000
                 except HTTPError as error:
                     assert error.code == 400
                 assert "receiver = \"west\"" in config.read_text()
-            original = config.read_text()
-            malformed = original + "\nport = [\n"
-            config.write_text(malformed)
+            # Revisions are byte hashes. Restoring via text mode would change
+            # the generated file's LF line endings to CRLF on Windows.
+            original = config.read_bytes()
+            malformed = original + b"\nport = [\n"
+            config.write_bytes(malformed)
             deadline = time.monotonic() + 5
             while True:
                 with closing(sqlite3.connect(Path(tmp) / "station.sqlite")) as db, db:
@@ -186,10 +188,13 @@ center_hz = 14080000
                 assert b"Error while parsing array" in recovered
                 if path == "/receivers":
                     assert b"west" in recovered and b"Worker launched" in recovered
-            assert config.read_text() == malformed
-            config.write_text(original)
+            assert config.read_bytes() == malformed
+            config.write_bytes(original)
             data=urllib.parse.urlencode({"csrf":csrf,"revision":revision,"config":base}).encode()
-            urllib.request.urlopen(urllib.request.Request(url+"/settings",data=data)).close()
+            try:
+                urllib.request.urlopen(urllib.request.Request(url+"/settings",data=data)).close()
+            except HTTPError as error:
+                raise AssertionError(error.read().decode()) from error
             try:
                 assert client.recv(1)==b""
             except ConnectionResetError:

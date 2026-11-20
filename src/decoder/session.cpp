@@ -6,6 +6,8 @@
 #include <boost/dll/shared_library.hpp>
 #include <chrono>
 #include <stdexcept>
+#include <utility>
+#include <vector>
 
 #include "core/plugin_modules.h"
 #include "decoder/result_wire.h"
@@ -22,19 +24,26 @@ SmSlotMode ParseMode(const std::string& mode) {
   throw std::runtime_error("supported slot modes are FT4, FT8 and WSPR");
 }
 
-struct SmLoadedSlotDecoder {
-  boost::dll::shared_library module;
-  const SmSlotDecoderPlugin* plugin;
-};
-
-SmLoadedSlotDecoder LoadDecoder(SmSlotMode mode) {
+std::vector<boost::dll::shared_library> DiscoverDecoders() {
+  std::vector<boost::dll::shared_library> modules;
   for (const auto& path : PluginModules("libdecoder")) {
     boost::dll::fs::error_code error;
     boost::dll::shared_library module(path, error);
-    if (error || !module.has("skim_slot_decoder_v2")) continue;
+    if (!error && module.has("skim_slot_decoder_v2"))
+      modules.push_back(std::move(module));
+  }
+  return modules;
+}
+
+const SmSlotDecoderPlugin& LoadDecoder(SmSlotMode mode) {
+  // A plugin's future can become ready before its thread has exited the DLL.
+  // Keep the module handles until the OS tears down the process.
+  static const auto& modules =
+      *new const std::vector<boost::dll::shared_library>(DiscoverDecoders());
+  for (const auto& module : modules) {
     const auto* plugin = module.get<const SmSlotDecoderPlugin*(SmSlotMode)>(
         "skim_slot_decoder_v2")(mode);
-    if (plugin) return {std::move(module), plugin};
+    if (plugin) return *plugin;
   }
   throw std::runtime_error(
       "no installed slot decoder supports the requested mode");
@@ -44,15 +53,15 @@ SmLoadedSlotDecoder LoadDecoder(SmSlotMode mode) {
 struct SmSlotDecoderSession::SmState {
   SmState(SmSlotMode mode, const SmDecoderRoute& route, int rate,
           SmSampleType type)
-      : module(LoadDecoder(mode)), cancelled(route.stop) {
-    const auto* decoder = module.plugin;
-    const auto& metadata = decoder->metadata();
+      : cancelled(route.stop) {
+    const auto& decoder = LoadDecoder(mode);
+    const auto& metadata = decoder.metadata();
     if (metadata.supported_mode != mode || metadata.required_type != type ||
         rate < metadata.min_samplerate || rate > metadata.max_samplerate)
       throw std::runtime_error(
           "slot decoder input is incompatible with metadata");
-    worker = decoder->start(route.decoder_id, queue, route.result_endpoint,
-                            stop, FftPlannerMutex());
+    worker = decoder.start(route.decoder_id, queue, route.result_endpoint, stop,
+                           FftPlannerMutex());
   }
 
   ~SmState() {
@@ -68,7 +77,6 @@ struct SmSlotDecoderSession::SmState {
     }
   }
 
-  SmLoadedSlotDecoder module;
   const std::atomic_bool& cancelled;
   std::atomic_bool stop{false};
   DecoderInput queue{1};
