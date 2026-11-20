@@ -100,7 +100,7 @@ int Run(int argc, char** argv) {
     auto utc = Number(argv[5]);
     if (utc % (skim::SlotSamples(argv[2]) / 12) || !*argv[6])
       throw std::runtime_error("invalid UTC slot boundary or receiver ID");
-    auto spots = skim::DecodeSlot(argv[2], argv[3], dial);
+    auto spots = skim::DecodeSlot(argv[2], argv[3], dial, utc);
     skim::SaveSlot(argv[7], argv[6], argv[2], utc, spots);
     for (const auto& s : spots)
       std::cout << s.frequency << ' ' << s.message << '\n';

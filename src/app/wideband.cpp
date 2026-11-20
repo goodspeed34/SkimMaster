@@ -12,11 +12,11 @@
 #include <iostream>
 #include <memory>
 #include <nlohmann/json.hpp>
-#include <set>
 #include <thread>
 
+#include "app/instance.h"
 #include "app/live.h"
-#include "app/slice_tuning.h"
+#include "decoder/session.h"
 #include "dsp/spectrum.h"
 
 extern "C" {
@@ -92,21 +92,18 @@ class FractionalDecimator {
   std::vector<std::vector<float>> phases_;
 };
 
-class Slice {
+class SlicePipeline {
  public:
-  Slice(const Json& cfg, int rate, int64_t center, const std::string& device,
-        const std::string& receiver, const Json& root)
-      : file_(IsReplayReceiver(device)) {
-    std::string mode = cfg.at("mode");
-    const auto frequency = SliceReference(cfg, mode, center);
+  SlicePipeline(const SmSlice& slice, int64_t center, const Json& root,
+                std::optional<DecoderRoute> route)
+      : file_(IsReplayReceiver(slice.receiver().device())) {
+    const auto& device = slice.receiver().device();
+    const auto rate = slice.receiver().rate();
+    const auto frequency = slice.reference_hz(center);
     if (frequency <= 0 || frequency > 1000000000000LL)
       throw std::runtime_error("invalid slice frequency");
-    out_rate_ = mode == "CW" ? 48000 : 12000;
-    int64_t offset = frequency - center;
-    if (IsTimedDecoder(mode))
-      offset += 1500;
-    else if (!IsSkimmer(mode) && mode != "SSTV")
-      throw std::runtime_error("unknown slice mode");
+    out_rate_ = slice.output_rate();
+    const int64_t offset = slice.capture_hz(center) - center;
     if (rate < out_rate_ || std::abs(offset) + out_rate_ / 2 > rate / 2)
       throw std::runtime_error(
           "slice outside passband or incompatible receiver sample rate");
@@ -134,19 +131,19 @@ class Slice {
     if (file_ && utc < 0)
       throw std::runtime_error("replayed wideband IQ requires utc_ms");
     if (utc > 100000000000000LL) throw std::runtime_error("invalid UTC origin");
-    worker_ = std::async(std::launch::async, [this, mode, frequency, device,
-                                              receiver, db, gallery, utc] {
+    worker_ = std::async(std::launch::async, [this, &slice, frequency, db,
+                                              gallery, utc,
+                                              route = std::move(route)] {
       IqReader read = [this](const char*, int64_t, int, const Samples& samples,
                              const auto& gap) { Consume(samples, gap); };
-      if (mode == "SSTV")
-        ReceiveSstv(device.c_str(), frequency, out_rate_, gallery.c_str(),
-                    read);
+      if (slice.mode() == SmMode::Sstv)
+        ReceiveSstv(slice, frequency, out_rate_, gallery.c_str(), read);
       else
-        ReceiveMode(mode, device.c_str(), frequency, receiver.c_str(),
-                    db.c_str(), utc, read);
+        ReceiveSlice(slice, frequency, db.c_str(), utc, read,
+                     route ? &*route : nullptr);
     });
   }
-  ~Slice() {
+  ~SlicePipeline() {
     if (worker_.valid()) {
       nng_close(rx_.socket);
       worker_.wait();
@@ -266,43 +263,70 @@ void Wideband(const char* config) {
   Wideband(Json::parse(in));
 }
 void Wideband(const Json& root) {
-  std::string device = root.at("device"), id = root.at("receiver");
-  int rate = root.at("rate");
-  int64_t center = root.at("center_hz");
-  if (id.empty() || rate < 12000 || rate > 6144000 || center <= 0 ||
-      center > 1000000000000LL || !root.at("slices").is_array())
+  const auto instance = SmInstance::FromReceiverPlan(root);
+  instance->receivers().front()->RunWideband();
+}
+
+void SmReceiver::RunWideband() const {
+  const auto& root = settings();
+  const auto& device = this->device();
+  const auto& id = this->id();
+  const int rate = this->rate();
+  const auto center = configured_center().value_or(0);
+  if (rate < 12000 || rate > 6144000 || center <= 0 || center > 1000000000000LL)
     throw std::runtime_error("invalid receiver configuration");
   const bool repeat = root.value("repeat", false);
   if (repeat && !IsWavReceiver(device))
     throw std::runtime_error("repeat is available only for WAV receivers");
-  Spectrum spectrum(root.at("database"), id, rate, center);
-  do {
-    // Construct fresh slices on every pass to prevent a slot or text frame
-    // from spanning the discontinuity between the end and start of the WAV.
-    std::vector<std::unique_ptr<Slice>> slices;
-    for (const auto& cfg : root.at("slices"))
-      slices.push_back(
-          std::make_unique<Slice>(cfg, rate, center, device, id, root));
-
-    const auto started = std::chrono::steady_clock::now();
-    uint64_t frames = 0;
-    ReadReceiver(
-        device.c_str(), center, rate, root.value("gain_db", double(NAN)),
-        root.value("ppm", double(NAN)),
-        [&](const std::complex<float>* data, size_t n) {
-          if (repeat) {
-            frames += n;
-            auto elapsed = std::chrono::duration<double>(
-                static_cast<double>(frames) / rate);
-            std::this_thread::sleep_until(started + elapsed);
+  const std::string database = root.at("database");
+  const bool live = !IsReplayReceiver(device);
+  CollectDecoderResults(
+      [&](const std::string& endpoint, const std::atomic_bool& stop) {
+        Spectrum spectrum(database, id, rate, center);
+        do {
+          // A new pass starts with fresh channelizer and slot state.
+          std::vector<std::unique_ptr<SlicePipeline>> pipelines;
+          for (const auto* slice : slices()) {
+            std::optional<DecoderRoute> route;
+            if (const auto* decoder = slice->decoder().slot_decoder())
+              route.emplace(DecoderRoute{decoder->id(), endpoint, stop});
+            pipelines.push_back(std::make_unique<SlicePipeline>(
+                *slice, center, root, std::move(route)));
           }
-          spectrum.Observe(data, n);
-          for (auto& slice : slices) slice->Push(data, n);
-        },
-        [&] {
-          for (auto& slice : slices) slice->Gap();
-        });
-    for (auto& slice : slices) slice->Finish();
-  } while (repeat);
+          const auto started = std::chrono::steady_clock::now();
+          uint64_t frames = 0;
+          ReadReceiver(
+              device.c_str(), center, rate, root.value("gain_db", double(NAN)),
+              root.value("ppm", double(NAN)),
+              [&](const std::complex<float>* data, size_t n) {
+                if (stop.load())
+                  throw std::runtime_error("slot collection stopped");
+                if (repeat) {
+                  frames += n;
+                  auto elapsed = std::chrono::duration<double>(
+                      static_cast<double>(frames) / rate);
+                  std::this_thread::sleep_until(started + elapsed);
+                }
+                spectrum.Observe(data, n);
+                for (auto& pipeline : pipelines) pipeline->Push(data, n);
+              },
+              [&] {
+                if (stop.load())
+                  throw std::runtime_error("slot collection stopped");
+                for (auto& pipeline : pipelines) pipeline->Gap();
+              });
+          for (auto& pipeline : pipelines) pipeline->Finish();
+        } while (repeat && !stop.load());
+      },
+      [&](DecoderResult result) {
+        const auto decoder = instance().find_decoder(result.decoder_id);
+        if (!decoder || !decoder->slot_decoder() ||
+            &decoder->slice().receiver() != this)
+          throw std::runtime_error("unknown slot decoder in receiver plan");
+        const auto& slice = decoder->slice();
+        PublishSlot(std::move(result), slice.reference_hz(center),
+                    slice.receiver().id().c_str(), ModeName(decoder->mode()),
+                    database.c_str(), live);
+      });
 }
 }  // namespace skim

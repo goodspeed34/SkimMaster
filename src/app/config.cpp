@@ -7,6 +7,7 @@
 #include <cmath>
 #include <cstdio>
 #include <fstream>
+#include <map>
 #include <random>
 #include <regex>
 #include <set>
@@ -88,6 +89,65 @@ toml::table& IndexedTable(toml::array* entries, size_t index) {
   return *(*entries)[index].as_table();
 }
 
+// Insert IDs at each slice definition so existing TOML comments and layout
+// survive.
+std::string WithDecoderIds(const std::string& source) {
+  auto station = toml::parse(source);
+  auto* receivers = station["receivers"].as_array();
+  if (!receivers) return source;
+  std::map<size_t, std::string, std::greater<size_t>> insertions;
+  std::vector<size_t> lines{0};
+  for (size_t i = 0; i < source.size(); ++i)
+    if (source[i] == '\n') lines.push_back(i + 1);
+  auto add_ids = [&](toml::table& owner, const char* group) {
+    auto* slices = owner[group].as_array();
+    if (!slices) return;
+    for (auto& node : *slices) {
+      auto& slice = *node.as_table();
+      auto position = node.source().begin;
+      auto offset = lines.at(position.line - 1);
+      auto line_end = source.find('\n', offset);
+      if (line_end == std::string::npos) line_end = source.size();
+      const bool crlf = line_end && source[line_end - 1] == '\r';
+      if (slice.is_inline()) {
+        // TOML source columns count UTF-8 code points.
+        if (!offset && source.compare(0, 3, "\xEF\xBB\xBF") == 0) offset = 3;
+        for (size_t column = 1; column < position.column; ++column) {
+          ++offset;
+          while (offset < line_end &&
+                 (static_cast<unsigned char>(source[offset]) & 0xc0) == 0x80)
+            ++offset;
+        }
+        if (offset >= line_end || source[offset] != '{')
+          throw std::runtime_error("cannot locate inline slice definition");
+        ++offset;
+      } else {
+        offset = line_end - crlf;
+      }
+      for (auto key : {"slice_id", "decoder_id"}) {
+        if (slice.contains(key)) continue;
+        std::random_device random;
+        std::ostringstream id;
+        if (!slice.is_inline()) id << (crlf ? "\r\n" : "\n");
+        id << key << " = \"" << std::hex << random() << '-' << random() << '-'
+           << random() << '"';
+        if (slice.is_inline()) id << ", ";
+        insertions[offset] += id.str();
+      }
+    }
+  };
+  for (auto& node : *receivers) {
+    auto& receiver = *node.as_table();
+    add_ids(receiver, "slices");
+    add_ids(receiver, "attached_slices");
+    if (auto* schedules = receiver["schedules"].as_array())
+      for (auto& schedule : *schedules) add_ids(*schedule.as_table(), "slices");
+  }
+  auto result = source;
+  for (const auto& [offset, fields] : insertions) result.insert(offset, fields);
+  return result;
+}
+
 void SaveTable(const fs::path& file, const toml::table& table,
                const std::string& expected) {
   std::ostringstream output;
@@ -116,7 +176,9 @@ StationSettings Parse(const fs::path& file, std::string source) {
     table.erase("user");
     table.erase("password");
     std::ostringstream cleaned;
-    cleaned << toml::toml_formatter{table} << '\n';
+    auto flags = toml::toml_formatter::default_flags &
+                 ~toml::format_flags::allow_literal_strings;
+    cleaned << toml::toml_formatter{table, flags} << '\n';
     source = cleaned.str();
   }
   auto data = Value(table);
@@ -226,6 +288,9 @@ void SaveSettings(const fs::path& file, const std::string& source,
   if (current.revision != expected)
     throw std::runtime_error("configuration changed; reload and retry");
   auto validated = Parse(file, source);
+  auto with_ids = WithDecoderIds(validated.source);
+  if (with_ids != validated.source)
+    validated = Parse(file, std::move(with_ids));
   // The staging directory is next to the destination so rename is atomic.
   auto staging = file.parent_path() / (".skimmaster-config-" +
                                        std::to_string(std::random_device{}()));
@@ -249,6 +314,14 @@ void SaveSettings(const fs::path& file, const std::string& source,
   }
   std::error_code ignored;
   fs::remove(staging, ignored);
+}
+
+StationSettings PersistDecoderIds(const fs::path& file,
+                                  StationSettings current) {
+  auto with_ids = WithDecoderIds(current.source);
+  if (with_ids == current.source) return current;
+  SaveSettings(file, with_ids, current.revision);
+  return LoadSettings(file);
 }
 
 void UpdateReceiver(const fs::path& file, const std::string& expected,
@@ -368,6 +441,12 @@ void UpdateSchedule(const fs::path& file, const std::string& expected,
   if (duplicate) {
     if (!index) throw std::runtime_error("select a schedule to duplicate");
     added = target;
+    if (auto* slices = added["slices"].as_array()) {
+      for (auto& slice : *slices) {
+        slice.as_table()->erase("slice_id");
+        slice.as_table()->erase("decoder_id");
+      }
+    }
     const auto name = added["name"].value_or(std::string("Schedule"));
     added.insert_or_assign("name", name + " (copy)");
     schedules->push_back(std::move(added));

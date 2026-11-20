@@ -16,6 +16,7 @@
 #include <thread>
 
 #include "app/config.h"
+#include "app/instance.h"
 #include "app/slice_tuning.h"
 #include "app/station_lock.h"
 #include "app/wideband.h"
@@ -79,7 +80,7 @@ void Log(Database& db, const std::string& component,
   db.Done(q.get());
 }
 void Validate(const Json& cfg) {
-  std::set<std::string> ids, devices;
+  std::set<std::string> ids, devices, slice_ids, decoder_ids;
   if (!cfg.is_object() || !cfg.at("receivers").is_array())
     throw std::runtime_error("receivers must be an array");
   auto services = cfg.value("services", Json::object());
@@ -148,6 +149,14 @@ void Validate(const Json& cfg) {
       if (!configured.is_array())
         throw std::runtime_error("expected an array of decoder slices");
       for (const auto& slice : configured) {
+        auto check_id = [&](const char* key, std::set<std::string>& seen) {
+          if (!slice.contains(key)) return;
+          auto id = slice.at(key).get<std::string>();
+          if (id.empty() || !seen.insert(id).second)
+            throw std::runtime_error(std::string("empty or duplicate ") + key);
+        };
+        check_id("slice_id", slice_ids);
+        check_id("decoder_id", decoder_ids);
         std::string mode = slice.at("mode");
         const bool skimmer = IsSkimmer(mode);
         bool timed = IsTimedDecoder(mode);
@@ -187,28 +196,35 @@ void Validate(const Json& cfg) {
     }
   }
 }
-Json Plan(const Json& cfg, const char* database, const char* gallery,
-          const std::filesystem::path& config_dir, int minute, int weekday,
-          const Json& overrides) {
+}  // namespace
+
+Json SmInstance::WorkerPlans(const char* database, const char* gallery,
+                             const std::filesystem::path& config_dir,
+                             int minute, int weekday,
+                             const Json& overrides) const {
   Json jobs = Json::object();
-  for (const auto& r : cfg.at("receivers")) {
-    if (!r.value("enabled", true)) continue;
-    const auto id = r.at("receiver").get<std::string>();
+  for (const auto* receiver : receivers()) {
+    if (!receiver->enabled()) continue;
+    const auto& id = receiver->id();
+    const auto& r = receiver->settings();
+    const auto schedules = r.value("schedules", Json::array());
     const Json* winner = nullptr;
+    std::optional<size_t> schedule_index;
     int64_t override_expiry = 0;
-    if (overrides.contains(id) && r.contains("schedules")) {
+    if (overrides.contains(id)) {
       const auto& override = overrides.at(id);
-      const auto& schedules = r.at("schedules");
       auto selected = std::find(schedules.begin(), schedules.end(),
                                 override.at("schedule"));
       if (selected != schedules.end()) {
         winner = &*selected;
+        schedule_index = static_cast<size_t>(selected - schedules.begin());
         override_expiry = override.at("expires");
       }
     }
     if (!winner && r.contains("slices")) winner = &r;
-    if (!winner && r.contains("schedules")) {
-      for (const auto& w : r.at("schedules")) {
+    if (!winner) {
+      for (size_t index = 0; index < schedules.size(); ++index) {
+        const auto& w = schedules[index];
         if (!w.value("enabled", true)) continue;
         int start = w.at("start_minute"), end = w.at("end_minute");
         bool active =
@@ -216,41 +232,48 @@ Json Plan(const Json& cfg, const char* database, const char* gallery,
                                          : minute >= start || minute < end);
         int day = start > end && minute < end ? (weekday + 6) % 7 : weekday;
         active = active && (w.value("days", 127) & (1 << day));
-        if (active && (!winner || w.at("priority") < winner->at("priority")))
+        if (active && (!winner || w.at("priority") < winner->at("priority"))) {
           winner = &w;
+          schedule_index = index;
+        }
       }
     }
     if (!winner) continue;
-    auto device = r.at("device").get<std::string>();
+    auto device = receiver->device();
     if (IsWavReceiver(device)) {
       auto path =
           ResolveWavPath(std::string_view(device).substr(4), config_dir);
       device = "wav:" + path.string();
     }
-    auto candidates = winner->value("slices", Json::array());
-    for (const auto& extra : r.value("attached_slices", Json::array()))
-      candidates.push_back(extra);
+    const int64_t center = winner->at("center_hz");
     auto active = Json::array();
-    for (const auto& slice : candidates)
-      if (SliceFits(slice, winner->at("center_hz"), r.at("rate")))
-        active.push_back(slice);
-    jobs[id] = {{"receiver", id},
-                {"device", device},
-                {"rate", r.at("rate")},
-                {"center_hz", winner->at("center_hz")},
-                {"slices", std::move(active)},
-                {"database", database},
-                {"gallery", gallery}};
+    const auto selected_group =
+        schedule_index ? SmSliceGroup::Scheduled : SmSliceGroup::Manual;
+    for (const auto* slice : receiver->slices()) {
+      if (slice->group() == selected_group &&
+          (!schedule_index || slice->schedule_index() == *schedule_index) &&
+          slice->fits(center))
+        active.push_back(slice->WorkerPlan());
+    }
+    for (const auto* slice : receiver->slices())
+      if (slice->group() == SmSliceGroup::Attached && slice->fits(center))
+        active.push_back(slice->WorkerPlan());
+    jobs[id] = {{"receiver", id},       {"receiver_id", id},
+                {"device", device},     {"rate", receiver->rate()},
+                {"center_hz", center},  {"slices", std::move(active)},
+                {"database", database}, {"gallery", gallery}};
     for (auto key : {"gain_db", "ppm", "utc_ms", "repeat"})
       if (r.contains(key)) jobs[id][key] = r.at(key);
     if (override_expiry) jobs[id]["override_expires"] = override_expiry;
   }
-  auto services = cfg.value("services", Json::object());
-  for (auto it = services.begin(); it != services.end(); ++it)
-    if (it.value().value("enabled", false))
-      jobs["@" + it.key()] = {{"service", it.key()}, {"options", it.value()}};
+  for (const auto* service : services())
+    if (service->enabled())
+      jobs["@" + service->id()] = {{"service", service->id()},
+                                   {"options", service->options()}};
   return jobs;
 }
+
+namespace {
 struct Job {
   std::unique_ptr<Process> process;
   Json plan;
@@ -361,8 +384,8 @@ void RunStationWorker(const char* path, const std::string& id) {
   } else
     Wideband(plan);
 }
-void RunStation(const std::filesystem::path& config) {
-  const auto startup = LoadSettings(config);
+void SmInstance::Run(const std::filesystem::path& config) {
+  auto startup = LoadSettings(config);
   const auto database = OperationalDatabasePath(startup.database);
   const auto database_name = database.string();
   const char* path = database_name.c_str();
@@ -371,6 +394,10 @@ void RunStation(const std::filesystem::path& config) {
   std::ofstream(lockfile, std::ios::app).close();
   boost::interprocess::file_lock lock(lockfile.c_str());
   if (!lock.try_lock()) throw std::runtime_error("station already running");
+  // Persist legacy IDs after taking the station lock.
+  const auto settings = PersistDecoderIds(config, startup);
+  auto instance = FromTopology(settings.topology);
+  auto revision = settings.revision;
   SaveSlot(path, "", "", 0, {});
   Database db(path);
   Init(db);
@@ -393,8 +420,6 @@ void RunStation(const std::filesystem::path& config) {
     return std::make_unique<Process>(io, exe, args);
   };
   Job panel;
-  auto topology = startup.topology;
-  auto revision = startup.revision;
   std::string last_reload_error;
   int64_t generation = -1;
   std::map<std::string, int64_t> service_restarts;
@@ -421,7 +446,8 @@ void RunStation(const std::filesystem::path& config) {
     try {
       auto settings = LoadSettings(config);
       if (settings.revision != revision) {
-        topology = std::move(settings.topology);
+        settings = PersistDecoderIds(config, std::move(settings));
+        instance = FromTopology(settings.topology);
         revision = std::move(settings.revision);
         Log(db, "controller", "Reloaded station TOML");
       }
@@ -434,8 +460,9 @@ void RunStation(const std::filesystem::path& config) {
     }
     auto seconds = std::time(nullptr);
     auto weekday = (seconds / 86400 + 3) % 7;
-    auto plans = Plan(topology, path, gallery, config.parent_path(),
-                      (seconds / 60) % 1440, weekday, ReadOverrides(db));
+    auto plans = instance->WorkerPlans(path, gallery, config.parent_path(),
+                                       (seconds / 60) % 1440, weekday,
+                                       ReadOverrides(db));
     std::set<std::string> restart_requested;
     auto restart_rows = db.Prepare("SELECT id,generation FROM worker_restarts");
     int restart_result;

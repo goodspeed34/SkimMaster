@@ -1,0 +1,5 @@
+[wrap-git]
+url = https://github.com/cameron314/readerwriterqueue.git
+revision = 8b2176698e9bdaba653cdc20c32b54737a934b47
+depth = 1
+patch_directory = readerwriterqueue

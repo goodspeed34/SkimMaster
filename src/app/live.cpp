@@ -4,12 +4,13 @@
 #include <array>
 #include <chrono>
 #include <cmath>
-#include <future>
 #include <iostream>
 #include <stdexcept>
 #include <string_view>
 
+#include "app/instance.h"
 #include "core/clock_health.h"
+#include "decoder/session.h"
 #include "decoder/slot.h"
 #include "decoder/sstv.h"
 #include "decoder/text_modes.h"
@@ -56,25 +57,74 @@ void ReceiveText(const std::string& mode, const char* device, int64_t center,
       },
       [] {});
 }
+
+std::shared_ptr<const SmSlice> StandaloneSlice(const std::string& mode,
+                                               const char* device, int64_t dial,
+                                               int rate, const char* receiver) {
+  const auto instance = SmInstance::FromReceiverPlan({
+      {"receiver", receiver},
+      {"device", device},
+      {"rate", rate},
+      {"center_hz", dial},
+      {"slices", nlohmann::json::array({{{"mode", mode},
+                                         {"dial_hz", dial},
+                                         {"slice_id", "receive"},
+                                         {"decoder_id", receiver}}})},
+  });
+  return instance->find_slice("receive");
+}
 }  // namespace
 
-void ReceiveSstv(const char* device, int64_t dial_hz, int rate,
+void ReceiveSstv(const char* device, int64_t dial, int rate,
+                 const char* gallery, const IqReader& read) {
+  const auto slice = StandaloneSlice("SSTV", device, dial, rate, "sstv");
+  ReceiveSstv(*slice, dial, rate, gallery, read);
+}
+
+void ReceiveSstv(const SmSlice& slice, int64_t dial, int rate,
                  const char* gallery, const IqReader& read) {
   DecodeSstv(rate, gallery, [&](const Samples& samples, const auto& gap) {
-    read(device, dial_hz, rate, samples, gap);
+    read(slice.receiver().device().c_str(), dial, rate, samples, gap);
   });
 }
 
 void ReceiveMode(const std::string& mode, const char* device, int64_t dial,
                  const char* receiver, const char* database, int64_t first_ms,
                  const IqReader& read) {
-  if (mode == "CW" || mode == "RTTY")
-    return ReceiveText(mode, device, dial, receiver, database, first_ms, read);
-  constexpr int rate = 12000;
+  const auto slice = StandaloneSlice(mode, device, dial,
+                                     mode == "CW" ? 48000 : 12000, receiver);
+  ReceiveSlice(*slice, dial, database, first_ms, read);
+}
+
+void ReceiveSlice(const SmSlice& slice, int64_t dial, const char* database,
+                  int64_t first_ms, const IqReader& read,
+                  const DecoderRoute* route) {
+  const auto& receiver = slice.receiver();
+  const auto* device = receiver.device().c_str();
+  const auto* mode = ModeName(slice.mode());
+  if (slice.mode() == SmMode::Cw || slice.mode() == SmMode::Rtty)
+    return ReceiveText(mode, device, dial, receiver.id().c_str(), database,
+                       first_ms, read);
+
+  const auto* slot_decoder = slice.decoder().slot_decoder();
+  if (!slot_decoder) throw std::runtime_error("expected a slot decoder");
+  if (!route) {
+    return CollectDecoderResults(
+        [&](const std::string& endpoint, const std::atomic_bool& stop) {
+          DecoderRoute local{slot_decoder->id(), endpoint, stop};
+          ReceiveSlice(slice, dial, database, first_ms, read, &local);
+        },
+        [&](DecoderResult result) {
+          PublishSlot(std::move(result), dial, receiver.id().c_str(), mode,
+                      database, !IsReplayReceiver(device));
+        });
+  }
+  const int rate = slot_decoder->input_sample_rate();
   const int length = SlotSamples(mode);
   std::vector<float> slot;
   slot.reserve(length);
-  std::future<void> decoder;
+  auto decoder = slot_decoder->Start(*route);
+  size_t dropped_slots = 0;
   int64_t position = -1;
   bool contiguous = false;
   auto reset = [&] {
@@ -107,6 +157,7 @@ void ReceiveMode(const std::string& mode, const char* device, int64_t dial,
   if (file && first_ms < 0)
     throw std::runtime_error("stdin IQ requires its UTC start in milliseconds");
   auto consume = [&](const std::complex<float>* buf, size_t count) {
+    if (route->stop.load()) throw std::runtime_error("slot collection stopped");
     if (!file && !ClockSynchronized()) {
       reset();
       return;
@@ -139,21 +190,9 @@ void ReceiveMode(const std::string& mode, const char* device, int64_t dial,
       slot.push_back((osc * band).real());
       if (slot.size() != static_cast<size_t>(length)) continue;
       int64_t utc = (sample_index + 1 - length) / 12;
-      if (decoder.valid() &&
-          decoder.wait_for(std::chrono::seconds(0)) !=
-              std::future_status::ready &&
-          !file) {
+      if (!decoder->Submit({utc, std::move(slot)}, file)) {
+        ++dropped_slots;
         std::cerr << "Decoder busy, skipped UTC slot " << utc << '\n';
-      } else {
-        if (decoder.valid()) decoder.get();
-        decoder = std::async(
-            std::launch::async, [mode, dial, receiver, database, file,
-                                 audio = std::move(slot), utc] {
-              auto spots = DecodeAudio(mode, audio, dial);
-              SaveSlot(database, receiver, mode.c_str(), utc, spots, !file);
-              for (const auto& spot : spots)
-                std::cout << spot.frequency << ' ' << spot.message << std::endl;
-            });
       }
       contiguous = false;
     }
@@ -166,6 +205,16 @@ void ReceiveMode(const std::string& mode, const char* device, int64_t dial,
     const std::array<std::complex<float>, taps / 2> tail{};
     consume(tail.data(), tail.size());
   }
-  if (decoder.valid()) decoder.get();
+  decoder->Finish();
+  if (dropped_slots)
+    std::cerr << "Dropped " << dropped_slots << " slots for decoder "
+              << slot_decoder->id() << '\n';
+}
+void PublishSlot(DecoderResult result, int64_t dial, const char* receiver,
+                 const char* mode, const char* database, bool live) {
+  ResolveSlotFrequencies(result.spots, dial);
+  SaveSlot(database, receiver, mode, result.utc_ms, result.spots, live);
+  for (const auto& spot : result.spots)
+    std::cout << spot.frequency << ' ' << spot.message << std::endl;
 }
 }  // namespace skim

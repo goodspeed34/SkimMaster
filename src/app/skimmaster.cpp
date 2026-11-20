@@ -2,7 +2,7 @@
 #include <iostream>
 
 #include "app/config.h"
-#include "app/station.h"
+#include "app/instance.h"
 
 int main(int argc, char** argv) {
   if (argc > 2 ||
@@ -13,7 +13,7 @@ int main(int argc, char** argv) {
   try {
     const std::filesystem::path config = argc == 2 ? argv[1] : "config.toml";
     if (argc == 1) skim::CreateDefaultSettings(config);
-    skim::RunStation(std::filesystem::canonical(config));
+    skim::SmInstance::Run(std::filesystem::canonical(config));
     return 0;
   } catch (const std::exception& error) {
     std::cerr << error.what() << '\n';

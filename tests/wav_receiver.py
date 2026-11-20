@@ -1,5 +1,6 @@
 import array
 from contextlib import closing
+import json
 import math
 import os
 from pathlib import Path
@@ -30,12 +31,35 @@ with tempfile.TemporaryDirectory() as directory:
     for sample in range(len(pcm) * capture_rate // 12000):
         value = pcm[sample * 12000 // capture_rate]
         phase = -math.tau * 4500 * (sample % capture_rate) / capture_rate
-        iq.extend((round(value * math.cos(phase)), round(value * math.sin(phase))))
+        # Put the same transmission in two slices 9 kHz apart.
+        iq.extend((round(value * math.cos(phase)), 0))
     if sys.byteorder != "little":
         iq.byteswap()
     with wave.open(str(recording), "wb") as out:
         out.setparams((2, 2, capture_rate, 0, "NONE", ""))
         out.writeframes(iq.tobytes())
+
+    # Both decoder workers report the same baseband offset independently.
+    dual_db = root / "dual.sqlite"
+    dual_config = root / "dual.json"
+    dual_config.write_text(json.dumps({
+        "receiver": "dual", "device": f"wav:{recording}", "rate": capture_rate,
+        "center_hz": 14078500, "database": str(dual_db),
+        "slices": [
+            {"slice_id": "lower", "decoder_id": "ft8-lower", "mode": "FT8",
+             "dial_hz": 14074000},
+            {"slice_id": "upper", "decoder_id": "ft8-upper", "mode": "FT8",
+             "dial_hz": 14083000},
+        ],
+    }))
+    subprocess.run([tools, "--wideband", dual_config], check=True, timeout=20,
+                   capture_output=True)
+    with closing(sqlite3.connect(dual_db)) as db, db:
+        matches = db.execute(
+            "SELECT frequency_hz FROM spots WHERE receiver='dual' AND utc_ms=0 "
+            "AND callsign='R7IW' ORDER BY frequency_hz"
+        ).fetchall()
+        assert len(matches) == 2 and matches[1][0] - matches[0][0] == 9000, matches
 
     # A single slot from stdin completes after flushing the decoder filter.
     stdin_iq = array.array("f")
@@ -126,12 +150,14 @@ with tempfile.TemporaryDirectory() as directory:
             try:
                 with closing(sqlite3.connect(root / "station.sqlite")) as db, db:
                     status = db.execute(
-                        "SELECT status FROM workers WHERE id='recording'").fetchone()
-                    if status == ("WAV playback complete",):
+                        "SELECT status,plan FROM workers WHERE id='recording'").fetchone()
+                    if status and status[0] == "WAV playback complete":
+                        first_plan = json.loads(status[1])
                         spots = db.execute(
-                            "SELECT receiver, utc_ms, callsign FROM spots WHERE callsign='R7IW'"
+                            "SELECT receiver, utc_ms, frequency_hz FROM spots WHERE callsign='R7IW'"
                         ).fetchall()
-                        assert spots == [("recording", 45000, "R7IW")], spots
+                        assert len(spots) == 1 and spots[0][:2] == ("recording", 45000), spots
+                        decoded_frequency = spots[0][2]
                         assert db.execute("SELECT count(*) FROM live_receptions").fetchone() == (0,)
                         break
             except sqlite3.OperationalError:
@@ -139,6 +165,33 @@ with tempfile.TemporaryDirectory() as directory:
             time.sleep(.05)
         else:
             raise AssertionError("WAV receiver did not complete playback")
+        # Changing the capture UTC replaces the worker with the same graph IDs.
+        replacement = config.with_suffix(".new")
+        source = config.read_text()
+        updated = re.sub(r"(?m)^([ \t]*utc_ms[ \t]*=[ \t]*)45000[ \t]*$", r"\g<1>60000", source)
+        assert updated != source
+        replacement.write_text(updated)
+        replacement.replace(config)
+        deadline = time.monotonic() + 10
+        while time.monotonic() < deadline and proc.poll() is None:
+            with closing(sqlite3.connect(root / "station.sqlite")) as db, db:
+                status = db.execute(
+                    "SELECT status,plan FROM workers WHERE id='recording'").fetchone()
+                if status and status[0] == "WAV playback complete":
+                    plan = json.loads(status[1])
+                    if plan["utc_ms"] == 60000:
+                        for key in ("receiver_id", "slice_id", "decoder_id"):
+                            assert plan["slices"][0][key] == first_plan["slices"][0][key]
+                        spots = db.execute(
+                            "SELECT frequency_hz FROM spots WHERE receiver='recording' "
+                            "AND utc_ms=60000 AND callsign='R7IW'"
+                        ).fetchall()
+                        assert spots == [(decoded_frequency,)], spots
+                        break
+            time.sleep(.05)
+        else:
+            raise AssertionError("WAV receiver did not complete after plan reload")
+
         loop = root / "loop.wav"
         with wave.open(str(loop), "wb") as out:
             out.setparams((2, 2, capture_rate, 0, "NONE", ""))

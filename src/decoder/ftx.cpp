@@ -22,7 +22,7 @@ std::string Field(const std::string& text, const ftx_message_offsets_t& fields,
 }  // namespace
 
 std::vector<Spot> DecodeFtx(const std::string& mode,
-                            const std::vector<float>& audio, int64_t dial) {
+                            const std::vector<float>& audio) {
   int samples = mode == "FT8" ? 180000 : 90000;
   if (audio.size() != static_cast<size_t>(samples))
     throw std::runtime_error("incomplete slot");
@@ -56,7 +56,6 @@ std::vector<Spot> DecodeFtx(const std::string& mode,
         FTX_MESSAGE_RC_OK)
       continue;
     auto hz =
-        dial +
         std::llround((monitor.min_bin + c.freq_offset +
                       static_cast<double>(c.freq_sub) / monitor.wf.freq_osr) /
                      monitor.symbol_period);

@@ -1,3 +1,4 @@
+import json
 import io
 import os
 from contextlib import closing
@@ -78,6 +79,19 @@ center_hz = 14080000
             assert b"14074000" in html and b"14080000" in html
             database = Path(tmp) / "station.sqlite"
             gallery = Path(tmp) / "gallery"
+            source = config.read_text()
+            slice_ids = set(re.findall(r'^\s*slice_id = "([^"]+)"', source, re.M))
+            decoder_ids = set(re.findall(r'^\s*decoder_id = "([^"]+)"', source, re.M))
+            assert len(slice_ids) == len(decoder_ids) == 4
+            with closing(sqlite3.connect(database)) as db, db:
+                plan = json.loads(db.execute(
+                    "SELECT plan FROM workers WHERE id='west'"
+                ).fetchone()[0])
+                assert plan["receiver_id"] == "west"
+                for slice_ in plan["slices"]:
+                    assert slice_["receiver_id"] == "west"
+                    assert slice_["slice_id"] in slice_ids
+                    assert slice_["decoder_id"] in decoder_ids
             archive = Path(tmp) / "before-restore.zip"
             subprocess.run([tools, "--backup", database, gallery, archive],
                            check=True, capture_output=True)

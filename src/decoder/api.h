@@ -1,26 +1,55 @@
 #pragma once
-#include <stdint.h>
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-// Strings and sample data are borrowed for the duration of the call.
-typedef struct {
-  int64_t frequency;
-  const char* message;
-  const char* call;
-  const char* grid;
-  const char* power;
-  double snr;
-  double dt;
-} skim_decode_result;
-typedef int (*skim_emit_result)(void*, const skim_decode_result*);
-typedef struct {
-  uint32_t version;
-  uint32_t size;
-  int (*process_slot)(const char* mode, const float* audio, uint32_t samples,
-                      int64_t dial, skim_emit_result emit, void* user);
-} skim_slot_api;
-#ifdef __cplusplus
-}
-#endif
+#include <readerwritercircularbuffer.h>
+
+#include <atomic>
+#include <complex>
+#include <future>
+#include <mutex>
+#include <optional>
+#include <string>
+#include <variant>
+#include <vector>
+
+#include "core/types.h"
+
+namespace skim {
+enum class SlotMode { Ft4, Ft8, Wspr };
+enum class SampleType { IQ, MonoAudio };
+
+struct SlotDecoderMetadata {
+  std::string decoder_name;
+  std::string decoder_version;
+  std::string decoder_author;
+  std::string decoder_website;
+  SlotMode supported_mode;
+  long long min_samplerate;
+  long long max_samplerate;
+  SampleType required_type;
+};
+
+struct DecoderSlot {
+  int64_t utc_ms;
+  std::variant<std::vector<float>, std::vector<std::complex<float>>> samples;
+};
+
+using DecoderInput =
+    moodycamel::BlockingReaderWriterCircularBuffer<std::optional<DecoderSlot>>;
+
+class SlotDecoder {
+ public:
+  virtual ~SlotDecoder() = default;
+  virtual const SlotDecoderMetadata& metadata() const noexcept = 0;
+  virtual std::future<void> start(std::string decoder_id, DecoderInput& input,
+                                  std::string result_endpoint,
+                                  const std::atomic_bool& stop,
+                                  std::mutex& fft_planner) const = 0;
+};
+
+struct DecoderResult {
+  std::string decoder_id;
+  int64_t utc_ms;
+  std::vector<Spot>
+      spots;  // Frequencies are signed offsets from the slice reference.
+};
+}  // namespace skim

@@ -23,11 +23,4 @@ inline int64_t SliceReference(const nlohmann::json& slice,
   }
   return slice.at("dial_hz");
 }
-inline bool SliceFits(const nlohmann::json& slice, int64_t center, int rate) {
-  const std::string mode = slice.at("mode");
-  const auto rf =
-      SliceReference(slice, mode, center) + (IsTimedDecoder(mode) ? 1500 : 0);
-  const int width = mode == "CW" ? 48000 : 12000;
-  return 2 * std::abs(rf - center) + width <= rate;
-}
 }  // namespace skim

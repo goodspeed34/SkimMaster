@@ -6,6 +6,6 @@
 
 namespace skim {
 std::vector<Spot> DecodeFtx(const std::string& mode,
-                            const std::vector<float>& audio, int64_t dial);
-std::vector<Spot> DecodeWspr(const std::vector<float>& audio, int64_t dial);
+                            const std::vector<float>& audio);
+std::vector<Spot> DecodeWspr(const std::vector<float>& audio);
 }  // namespace skim

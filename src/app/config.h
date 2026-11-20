@@ -73,6 +73,8 @@ struct ScheduleSettings {
 
 void CreateDefaultSettings(const std::filesystem::path& file);
 StationSettings LoadSettings(const std::filesystem::path& file);
+StationSettings PersistDecoderIds(const std::filesystem::path& file,
+                                  StationSettings current);
 void SaveSettings(const std::filesystem::path& file, const std::string& source,
                   const std::string& expected);
 void UpdateReceiver(const std::filesystem::path& file,

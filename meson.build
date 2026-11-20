@@ -14,6 +14,12 @@ project(
 
 csdr_dep = dependency('csdr')
 ftx = subproject('ft8_lib')
+decoder_deps = [
+  subproject('readerwriterqueue').get_variable('readerwriterqueue_dep'),
+  dependency('threads'),
+  dependency('nng'),
+  dependency('nlohmann_json', modules : ['nlohmann_json::nlohmann_json']),
+]
 boost = dependency('boost', modules : ['filesystem', 'system', 'process'])
 inja = dependency('inja', method : 'pkg-config', required : false)
 if not inja.found()
@@ -29,18 +35,16 @@ deps = [
   csdr_dep,
   boost,
   subproject('tomlplusplus').get_variable('toml_dep'),
-  dependency('threads'),
   dependency('morsedec', version : '>=0.3.0',
     default_options : ['tools=disabled', 'tui=disabled', 'default_library=static']),
   dependency('sndfile'),
   dependency('libpng'),
-  dependency('nng'),
   subproject('cpp-httplib').get_variable('http_dep'),
   inja,
   dependency('libzip'),
   dependency('openssl'),
   dependency('sqlite3'),
-] + socket_deps
+] + socket_deps + decoder_deps
 
 wspr = subproject('wspr')
 src_includes = include_directories('src')
@@ -49,11 +53,13 @@ build_flags = ['-DCPPHTTPLIB_OPENSSL_SUPPORT', '-DSKIM_VERSION="' + meson.projec
 build_flags += '-DSKIM_MODULE_SUFFIX=".' + module_suffix + '"'
 ftx_plugin = shared_module('decoderftx', 'src/decoder/plugin.cpp', 'src/decoder/ftx.cpp',
   include_directories : src_includes,
-  dependencies : ftx.get_variable('ftx_dep'), name_prefix : 'lib', name_suffix : module_suffix,
+  dependencies : decoder_deps + [ftx.get_variable('ftx_dep')],
+  cpp_args : build_flags, name_prefix : 'lib', name_suffix : module_suffix,
   install : true, install_dir : get_option('bindir'))
 wspr_plugin = shared_module('decoderwspr', 'src/decoder/plugin.cpp', 'src/decoder/wspr.cpp',
   include_directories : src_includes,
-  dependencies : [csdr_dep, wspr.get_variable('wspr_dep')], cpp_args : ['-DSKIM_WSPR'],
+  dependencies : decoder_deps + [csdr_dep, wspr.get_variable('wspr_dep')],
+  cpp_args : build_flags + ['-DSKIM_WSPR'],
   name_prefix : 'lib', name_suffix : module_suffix, install : true, install_dir : get_option('bindir'))
 
 radio_modules = []
@@ -82,6 +88,7 @@ endforeach
 subdir('src/web')
 sources = files(
   'src/app/backup.cpp',
+  'src/app/instance.cpp',
   'src/app/live.cpp',
   'src/app/replay.cpp',
   'src/app/config.cpp',
@@ -116,6 +123,9 @@ server = executable('SkimMaster', 'src/app/skimmaster.cpp',
   link_depends : [exe], dependencies : station_dep, install : true)
 
 test('basic', exe)
+instance_test = executable('instance-test', 'tests/instance.cpp',
+  dependencies : station_dep)
+test('typed instance graph', instance_test)
 
 test('replay', find_program('python3'), args : [files('tests/replay.py'), exe])
 

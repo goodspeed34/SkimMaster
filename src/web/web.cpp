@@ -25,6 +25,7 @@
 
 #include "app/backup.h"
 #include "app/config.h"
+#include "app/instance.h"
 #include "app/slice_tuning.h"
 #include "app/station.h"
 #include "app/station_lock.h"
@@ -256,6 +257,7 @@ std::string PanelSlug(const std::string& path) {
 
 struct SettingsSnapshot {
   std::optional<StationSettings> settings;
+  std::shared_ptr<const SmInstance> instance;
   std::string error;
 };
 
@@ -268,18 +270,24 @@ class SettingsCache {
   SettingsSnapshot Read() {
     std::lock_guard<std::mutex> lock(mutex_);
     try {
-      settings_ = LoadSettings(path_);
+      auto settings = LoadSettings(path_);
+      if (!settings_ || settings_->revision != settings.revision) {
+        auto instance = SmInstance::FromTopology(settings.topology);
+        settings_ = std::move(settings);
+        instance_ = std::move(instance);
+      }
       error_.clear();
     } catch (const std::exception& error) {
       error_ = error.what();
     }
-    return {settings_, error_};
+    return {settings_, instance_, error_};
   }
 
  private:
   std::filesystem::path path_;
   std::mutex mutex_;
   std::optional<StationSettings> settings_;
+  std::shared_ptr<const SmInstance> instance_;
   std::string error_;
 };
 }  // namespace
@@ -545,16 +553,17 @@ void Serve(const char* config, const char* address, int port,
         Json{{"mode", ""}, {"slice_center", ""}, {"dial_hz", ""}};
     bool found = original.empty() && action != "delete";
     std::string probe_driver = "soapy";
-    for (const auto& receiver : settings.topology.at("receivers")) {
-      const auto name = receiver.at("receiver").get<std::string>();
-      const auto device = receiver.at("device").get<std::string>();
+    const auto instance = SmInstance::FromTopology(settings.topology);
+    for (const auto* source : instance->receivers()) {
+      const auto& receiver = source->settings();
+      const auto& name = source->id();
+      const auto& device = source->device();
       const auto& driver = DriverFor(device);
-      receivers.push_back(
-          {{"name", Escape(name.c_str())},
-           {"device", Escape(device.c_str())},
-           {"driver", driver.label},
-           {"enabled", receiver.value("enabled", true) ? "Yes" : "No"},
-           {"rate", receiver.at("rate")}});
+      receivers.push_back({{"name", Escape(name.c_str())},
+                           {"device", Escape(device.c_str())},
+                           {"driver", driver.label},
+                           {"enabled", source->enabled() ? "Yes" : "No"},
+                           {"rate", source->rate()}});
       if (name != original) continue;
       std::optional<int64_t> tuned;
       for (const auto& row : Query(database,
@@ -562,50 +571,48 @@ void Serve(const char* config, const char* address, int port,
                                    "FROM workers WHERE id NOT LIKE '@%'"))
         if (row[0] == Escape(name.c_str()) && row[1] != "")
           tuned = std::stoll(row[1].get<std::string>());
-      if (!tuned && receiver.contains("center_hz"))
-        tuned = receiver.at("center_hz").get<int64_t>();
-      auto add_slices = [&](const Json& owner, const char* key,
-                            const std::string& label, const std::string& parent,
-                            std::optional<int64_t> center) {
-        const auto slices = owner.value(key, Json::array());
-        for (size_t index = 0; index < slices.size(); ++index) {
-          const auto& slice = slices.at(index);
-          std::string mode = slice.at("mode");
-          bool follows = IsSkimmer(mode) && !slice.contains("center_hz") &&
-                         !slice.contains("dial_hz");
-          auto reference =
-              follows ? "Receiver center"
-                      : std::to_string(SliceReference(slice, mode, 0)) +
-                            (IsSkimmer(mode) ? " Hz center" : " Hz dial");
-          auto coverage = !center ? "Awaiting tuning"
-                          : SliceFits(slice, *center, receiver.at("rate"))
-                              ? "In bandwidth"
-                              : "Outside bandwidth";
-          attached.push_back({{"mode", mode},
-                              {"reference", reference},
-                              {"coverage", coverage},
-                              {"group", key},
-                              {"label", label},
-                              {"index", index},
-                              {"schedule", parent}});
-          if (group == key && schedule_index == parent &&
-              slice_index == std::to_string(index)) {
-            slice_fields["mode"] = mode;
-            if (!follows)
-              slice_fields[IsSkimmer(mode) ? "slice_center" : "dial_hz"] =
-                  std::to_string(SliceReference(slice, mode, 0));
-          }
+      if (!tuned) tuned = source->configured_center();
+      const auto schedules = receiver.value("schedules", Json::array());
+      for (const auto* slice : source->slices()) {
+        const char* key = "slices";
+        std::string label = "Manual", parent;
+        auto center = tuned;
+        if (slice->group() == SmSliceGroup::Attached) {
+          key = "attached_slices";
+          label = "Attached";
+        } else if (slice->group() == SmSliceGroup::Scheduled) {
+          const auto index = slice->schedule_index();
+          const auto& schedule = schedules.at(index);
+          label = schedule.value("name", "");
+          if (label.empty()) label = "Schedule " + std::to_string(index + 1);
+          label = Escape(label.c_str());
+          parent = std::to_string(index);
+          center = schedule.at("center_hz").get<int64_t>();
         }
-      };
-      add_slices(receiver, "slices", "Manual", "", tuned);
-      add_slices(receiver, "attached_slices", "Attached", "", tuned);
-      auto schedules = receiver.value("schedules", Json::array());
-      for (size_t i = 0; i < schedules.size(); ++i) {
-        auto label = schedules.at(i).value("name", "");
-        if (label.empty()) label = "Schedule " + std::to_string(i + 1);
-        add_slices(schedules.at(i), "slices", Escape(label.c_str()),
-                   std::to_string(i),
-                   schedules.at(i).at("center_hz").get<int64_t>());
+        const auto mode = ModeName(slice->mode());
+        const auto frequency = slice->configured_reference();
+        const bool skimmer = IsSkimmer(mode);
+        const auto reference = frequency
+                                   ? std::to_string(*frequency) +
+                                         (skimmer ? " Hz center" : " Hz dial")
+                                   : "Receiver center";
+        const auto coverage = !center                ? "Awaiting tuning"
+                              : slice->fits(*center) ? "In bandwidth"
+                                                     : "Outside bandwidth";
+        attached.push_back({{"mode", mode},
+                            {"reference", reference},
+                            {"coverage", coverage},
+                            {"group", key},
+                            {"label", label},
+                            {"index", slice->index()},
+                            {"schedule", parent}});
+        if (group == key && schedule_index == parent &&
+            slice_index == std::to_string(slice->index())) {
+          slice_fields["mode"] = mode;
+          if (frequency)
+            slice_fields[skimmer ? "slice_center" : "dial_hz"] =
+                std::to_string(*frequency);
+        }
       }
       found = true;
       probe_driver = driver.id;
@@ -1233,7 +1240,7 @@ void Serve(const char* config, const char* address, int port,
     if (req.path == "/") {
       if (settings_view.error.empty() && settings_view.settings &&
           settings_view.settings->first_run_wizard &&
-          settings_view.settings->topology["receivers"].empty()) {
+          settings_view.instance->receivers().empty()) {
         res.set_redirect("/wizard", 302);
         return;
       }
@@ -1622,13 +1629,12 @@ void Serve(const char* config, const char* address, int port,
           render(*page, model, res);
           return;
         }
-        const auto& settings = *settings_view.settings;
-        for (const auto& receiver : settings.topology.at("receivers")) {
-          auto name = DisplayField(receiver, "receiver");
-          const auto& device =
-              receiver.at("device").get_ref<const std::string&>();
+        for (const auto* source : settings_view.instance->receivers()) {
+          const auto& receiver = source->settings();
+          auto name = Escape(source->id().c_str());
+          const auto& device = source->device();
           auto found = active.find(name);
-          const bool enabled = receiver.value("enabled", true);
+          const bool enabled = source->enabled();
           const auto* worker =
               enabled && found != active.end() ? found->second : nullptr;
           auto center = DisplayField(receiver, "center_hz", "—");
@@ -1641,7 +1647,7 @@ void Serve(const char* config, const char* address, int port,
                                    std::string(DriverFor(device).label) +
                                        " · " + Escape(device.c_str()),
                                    worker ? (*worker)[2] : Json(center),
-                                   receiver.at("rate"),
+                                   source->rate(),
                                    DisplayField(receiver, "gain_db", "—"),
                                    worker ? (*worker)[3] : Json("—"),
                                    worker ? (*worker)[4] : Json("—"),
