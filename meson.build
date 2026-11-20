@@ -2,7 +2,7 @@ project(
   'SkimMaster',
   'cpp',
   version : '0.1.0',
-  license : 'GPL-3.0-or-later',
+  license : 'AGPL-3.0-or-later',
   license_files : 'COPYING',
   meson_version : '>= 1.3.0',
   default_options : [
@@ -43,7 +43,7 @@ deps = [
   inja,
   dependency('libzip'),
   dependency('openssl'),
-  dependency('sqlite3'),
+  subproject('sqlite_orm').get_variable('sqlite_orm_dep'),
 ] + socket_deps + decoder_deps
 
 wspr = subproject('wspr')
@@ -86,6 +86,19 @@ foreach radio : ['soapy', 'rtltcp', 'alsa', 'wav']
     name_prefix : 'lib', name_suffix : module_suffix, install : true, install_dir : get_option('bindir'))
 endforeach
 
+source_url = get_option('source_url')
+if source_url == ''
+  source_offer = vcs_tag(input : 'src/core/source_offer.h.in', output : 'source_offer.h',
+    command : ['git', 'rev-parse', 'HEAD'], fallback : 'master')
+else
+  if not source_url.startswith('https://') and not source_url.startswith('http://')
+    error('source_url must be an HTTP or HTTPS URL')
+  endif
+  source_config = configuration_data()
+  source_config.set_quoted('SKIM_SOURCE_URL', source_url)
+  source_offer = configure_file(output : 'source_offer.h', configuration : source_config)
+endif
+
 subdir('src/web')
 sources = files(
   'src/app/backup.cpp',
@@ -105,11 +118,12 @@ sources = files(
   'src/report/cluster.cpp',
   'src/report/reporting.cpp',
   'src/store/store.cpp',
+  'src/store/workers.cpp',
   'src/web/web.cpp',
 )
 
 station_lib = static_library(
-  'skimmaster_station', sources, assets,
+  'skimmaster_station', sources, assets, source_offer,
   include_directories : src_includes,
   cpp_args : build_flags,
   dependencies : deps,
@@ -150,5 +164,5 @@ test('WAV IQ receiver', find_program('python3'), args : [files('tests/wav_receiv
   meson.project_source_root() / 'subprojects/ft8_lib/test/wav/191111_110130.wav'])
 
 install_data('README.md', install_dir : get_option('datadir') / 'doc' / 'SkimMaster')
-install_data('COPYING', 'THIRD-PARTY-NOTICES.txt',
+install_data('COPYING', 'COPYING.GPL-3.0', 'THIRD-PARTY-NOTICES.txt',
   install_dir : get_option('datadir') / 'licenses' / 'SkimMaster')

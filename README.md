@@ -122,4 +122,6 @@ Station Settings also offers a snapshot download. Restore validates the archive 
 
 ## License
 
-Skim Master is licensed under the GNU General Public License, version 3 or any later version (SPDX `GPL-3.0-or-later`). See [COPYING](COPYING) and [third-party notices](THIRD-PARTY-NOTICES.txt).
+Skim Master is licensed under the GNU Affero General Public License, version 3 or any later version (SPDX `AGPL-3.0-or-later`). See [COPYING](COPYING) and [third-party notices](THIRD-PARTY-NOTICES.txt).
+
+The control panel, setup wizard, and DX Cluster greeting offer the corresponding source. Git builds default to the checkout's commit on the upstream repository. When deploying modified builds or building from a source archive, set the Meson option `-Dsource_url=https://your-host.example/skimmaster-source` to the publicly accessible corresponding source for the deployed build. Include dependency source and build scripts as required by their licenses.

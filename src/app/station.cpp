@@ -25,6 +25,7 @@
 #include "report/cluster.h"
 #include "report/reporting.h"
 #include "store/store.h"
+#include "store/workers.h"
 
 namespace skim {
 namespace {
@@ -363,14 +364,7 @@ void TestReceiverCapture(const Json& settings) {
         "settings.");
 }
 void RunStationWorker(const char* path, const std::string& id) {
-  SmDatabase db(path);
-  auto q = db.Prepare("SELECT plan FROM workers WHERE id=?");
-  db.Text(q.get(), 1, id);
-  if (sqlite3_step(q.get()) != SQLITE_ROW)
-    throw std::runtime_error("worker plan unavailable");
-  auto plan = Json::parse(
-      reinterpret_cast<const char*>(sqlite3_column_text(q.get(), 0)));
-  q.reset();
+  auto plan = Json::parse(SmWorkerStore(path).Plan(id));
   if (plan.contains("service")) {
     auto svc = plan.at("service").get<std::string>();
     auto& opts = plan.at("options");
@@ -401,7 +395,8 @@ void SmInstance::Run(const std::filesystem::path& config) {
   SaveSlot(path, "", "", 0, {});
   SmDatabase db(path);
   Init(db);
-  db.Exec("DELETE FROM workers");
+  SmWorkerStore workers(path);
+  workers.Clear();
   Log(db, "controller", "Station started with " + config.string());
   boost::asio::io_context io;
   auto exe = boost::dll::program_location().parent_path() /
@@ -493,9 +488,7 @@ void SmInstance::Run(const std::filesystem::path& config) {
           !plans.contains(it->first) ||
           it->second.plan != plans.at(it->first)) {
         Stop(it->second);
-        auto del = db.Prepare("DELETE FROM workers WHERE id=?");
-        db.Text(del.get(), 1, it->first);
-        db.Done(del.get());
+        workers.Remove(it->first);
         Log(db, it->first, "Stopped allocation");
         it = jobs.erase(it);
       } else
@@ -504,11 +497,7 @@ void SmInstance::Run(const std::filesystem::path& config) {
     for (auto it = plans.begin(); it != plans.end(); ++it) {
       auto& job = jobs[it.key()];
       auto state = [&](const std::string& status) {
-        auto q = db.Prepare("INSERT OR REPLACE INTO workers VALUES(?,?,?)");
-        db.Text(q.get(), 1, it.key());
-        db.Text(q.get(), 2, it.value().dump());
-        db.Text(q.get(), 3, status);
-        db.Done(q.get());
+        workers.Save(it.key(), it.value().dump(), status);
         Log(db, it.key(), status);
       };
       if (job.process && !job.process->running()) {
@@ -539,7 +528,7 @@ void SmInstance::Run(const std::filesystem::path& config) {
   }
   for (auto& item : jobs) Stop(item.second);
   Stop(panel);
-  db.Exec("DELETE FROM workers");
+  workers.Clear();
   Log(db, "controller", "Station stopped");
 }
 }  // namespace skim

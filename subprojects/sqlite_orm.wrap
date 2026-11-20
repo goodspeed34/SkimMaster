@@ -1,0 +1,5 @@
+[wrap-git]
+url = https://github.com/fnc12/sqlite_orm.git
+revision = 5f1a2ce84a3d72711b4f0a440fdaba977868ae67
+depth = 1
+patch_directory = sqlite_orm

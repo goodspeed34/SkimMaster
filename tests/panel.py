@@ -89,6 +89,8 @@ with tempfile.TemporaryDirectory() as directory:
         receiver_page = get("/receiver-status")
         assert b'data-page="receiver-status" aria-current="page"' in receiver_page
         assert b'<b>Receiver pool:</b>' in receiver_page
+        source_offer = re.search(rb'<a href="(https?://[^"]+)">Source code</a>', receiver_page)
+        assert source_offer is not None
         assert b'<div class="page-title">Slice Allocation Table</div>' in get("/slice-allocation")
         noise = get("/noise-floor")
         assert b'<p>Unimplemented</p>' in noise
@@ -223,7 +225,9 @@ with tempfile.TemporaryDirectory() as directory:
             raise AssertionError("local service restart was not applied")
         assert b"No IQ sources configured." in get("/receiver-edit")
         assert b"Station TOML" not in get("/receiver-edit")
-        assert b"data-receiver-probe" in get("/wizard")
+        wizard = get("/wizard")
+        assert b"data-receiver-probe" in wizard
+        assert source_offer[0] in wizard
         add = form("/receiver-edit?add=1")
         recording = Path(directory) / "short IQ.wav"
         for name, channels in [(recording, 2), (Path(directory) / "mono.wav", 1)]:

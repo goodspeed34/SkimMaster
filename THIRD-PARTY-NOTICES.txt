@@ -1,6 +1,6 @@
 Skim Master third-party notices
 
-Source revisions and local build patches for bundled components are in subprojects/. The project GPL text is in COPYING.
+Source revisions and local build patches for bundled components are in subprojects/. The project AGPL text is in COPYING. The GPLv3 text for GPL-licensed components is in COPYING.GPL-3.0.
 
 ft8_lib
 
@@ -391,7 +391,7 @@ DEALINGS IN THE SOFTWARE.
 
 libmorsedec
 
-GPL-3.0-or-later. See COPYING. The bundled fallback includes SIMDe with the following notices.
+GPL-3.0-or-later. See COPYING.GPL-3.0. The bundled fallback includes SIMDe with the following notices.
 
 Copyright (c) 2017 Evan Nemerson <evan@nemerson.com>
 
@@ -425,3 +425,9 @@ This file is part of wsprd.
 
  Copyright 1994, Phil Karn, KA9Q
  Minor modifications by Joe Taylor, K1JT
+
+sqlite_orm
+
+sqlite_orm v1.9.1 by fnc12 and contributors is included under the GNU Affero General Public License, version 3.
+Source: https://github.com/fnc12/sqlite_orm/tree/v1.9.1
+The upstream license is installed as sqlite_orm-LICENSE.

@@ -1,0 +1,2 @@
+option('source_url', type : 'string', value : '',
+  description : 'Corresponding Source URL for modified or separately hosted builds')

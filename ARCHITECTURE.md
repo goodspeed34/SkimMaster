@@ -43,6 +43,8 @@ The supervisor stays up during a receiver or service restart. SQLite transaction
 
 ## Storage and delivery
 
+The supervisor uses sqlite_orm to read and write typed worker rows in SQLite. The station initializes the schema with explicit SQL, and the panel can expand worker plans with SQLite's JSON functions. Reception writes, reporting, and snapshot operations use the SQLite C API.
+
 Spots store receiver, mode, observed UTC, RF frequency, message and available callsign and grid. The transaction also records eligibility and optional measurements for live receptions. Public reporters select recent live receptions and persist acknowledgements or UDP send receipts. The local DX Cluster reads newly committed live receptions and bounds each client's output queue. RBN uses the direct `rx/6` API, including handshake configuration, filtering, cadence, quota, endpoint failover and optional confirmation feedback.
 
 See [README.md](README.md) for build and operation. Tests use saved and synthesized signals, an emulated RTL-TCP receiver, and local HTTP and UDP endpoints.

@@ -33,13 +33,15 @@ All production sources live under `src/`. Use it as the include root, with quali
 
 ## Licensing
 
+Skim Master is AGPL-3.0-or-later. The corresponding-source offer uses the Meson `source_url` option for modified builds.
+
 libcsdr is mixed-license: the core (`libcsdr.c`, `fft_fftw.c`, `fastddc.c`, `ima_adpcm.c`) is BSD-3-Clause, but `libcsdr_gpl.c` is GPL-3.0-or-later. The wrap builds it with `-DLIBCSDR_GPL` ("GPL on"), so the resulting binary must be distributed under GPL-compatible terms.
 
 **csdr C++ caveat:** the csdr headers have no `extern "C"` guards. From C++, include them as `extern "C" { #include <libcsdr.h> }` to avoid C++ name mangling at link time.
 
 ## Build & test
 
-The Linux build passes all 17 Meson tests. Coverage includes IQ replay, multichannel CW, off-center RTTY, FT8/FT4 and WSPR slots, all six SSTV modes, repeating WAV and reporting exclusion, reporter wire formats, decoder page filters/export, gallery mode/date filters, CSV, deletion and symlink checks, service opt-in/configuration and local worker restart, TOML identity fallback and field preservation, recovery from malformed TOML, WAV and RTL-TCP discovery, receiver edits and schedules, station lifecycle and snapshot validation. See [README.md](README.md) for build and operating commands.
+The Linux build passes all 18 Meson tests. Coverage includes IQ replay, multichannel CW, off-center RTTY, FT8/FT4 and WSPR slots, all six SSTV modes, repeating WAV and reporting exclusion, reporter wire formats, decoder page filters/export, gallery mode/date filters, CSV, deletion and symlink checks, service opt-in/configuration and local worker restart, TOML identity fallback and field preservation, recovery from malformed TOML, WAV and RTL-TCP discovery, receiver edits and schedules, station lifecycle and snapshot validation. See [README.md](README.md) for build and operating commands.
 
 ## Code style & tooling
 

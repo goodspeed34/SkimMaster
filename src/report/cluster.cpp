@@ -11,6 +11,7 @@
 #include <thread>
 #include <vector>
 
+#include "source_offer.h"
 #include "store/store.h"
 
 namespace skim {
@@ -108,7 +109,8 @@ void ServeCluster(const char* database, const char* call, const char* grid,
     if (!error && clients.size() < 32) {
       socket.non_blocking(true);
       clients.push_back(SmClient{std::move(socket),
-                                 "Skim Master\r\nPlease enter your call: ",
+                                 "Skim Master\r\nSource code: " SKIM_SOURCE_URL
+                                 "\r\nPlease enter your call: ",
                                  {},
                                  false});
     } else if (error && !WouldBlock(error))

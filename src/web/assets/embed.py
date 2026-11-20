@@ -208,7 +208,8 @@ shell = replace_inside(
     '    <span>Bands: <b>{{ bands }}</b> | Decoders: <b>{{ slice_count }} Channels</b>'
     ' | CPU Load: <b>{{ cpu_load }}</b></span>',
 )
-shell = shell.replace("v0.0.0", "v{{ version }}")
+source_link = '<a href="{{ source_url }}">Source code</a>'
+shell = shell.replace("v0.0.0</b><br>", "v{{ version }}</b> · " + source_link + "<br>")
 shell = shell.replace("<b>14d 06h 22m</b>", '<b id="uptime" data-seconds="{{ uptime }}">{{ uptime_label }}</b>')
 shell = shell.replace('class="mono js-utc">----</span>', 'class="mono js-utc">{{ utc }}</span>')
 shell = shell.replace('href="style.css"', 'href="/style.css"')
@@ -235,6 +236,8 @@ wizard_shell = re.sub(r'<script>.*?</script>',
                       '<script src="/receivers.js" defer></script>\n'
                       '<script src="/wizard.js" defer></script>',
                       wizard_shell, flags=re.S)
+wizard_shell = wizard_shell.replace(
+    "Return to Control Panel</a>", "Return to Control Panel</a> · " + source_link)
 wizard_shell = wizard_shell.replace("index.html#system-summary", "/system-summary")
 wizard_shell = wizard_shell.replace('href="style.css"', 'href="/style.css"')
 

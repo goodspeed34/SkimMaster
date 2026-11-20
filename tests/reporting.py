@@ -183,6 +183,8 @@ with tempfile.TemporaryDirectory() as tmp, http.server.HTTPServer(("127.0.0.1", 
                 time.sleep(.02)
         with client, client.makefile("rb") as stream:
             client.sendall(b"W1XYZ\r\n")
+            assert stream.readline() == b"Skim Master\r\n"
+            assert stream.readline().startswith((b"Source code: https://", b"Source code: http://"))
             for line in stream:
                 if b"Connected to Skim Master" in line:
                     break

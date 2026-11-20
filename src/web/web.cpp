@@ -31,6 +31,7 @@
 #include "app/station_lock.h"
 #include "dsp/spectrum.h"
 #include "receiver/receiver.h"
+#include "source_offer.h"
 #include "store/store.h"
 #include "web/panel_assets.h"
 
@@ -351,6 +352,7 @@ void Serve(const char* config, const char* address, int port,
     model["bands"] = "—";
     model["cpu_load"] = "—";
     model["version"] = SKIM_VERSION;
+    model["source_url"] = Escape(SKIM_SOURCE_URL);
     auto count = std::chrono::duration_cast<std::chrono::seconds>(
                      std::chrono::steady_clock::now() - panel_start)
                      .count();
@@ -496,6 +498,7 @@ void Serve(const char* config, const char* address, int port,
   auto render_wizard = [&](const httplib::Request& req, httplib::Response& res,
                            const std::string& error = "") {
     Json model{{"csrf", token.str()},
+               {"source_url", Escape(SKIM_SOURCE_URL)},
                {"error", Escape(error.c_str())},
                {"initial_step", error.empty() ? 0 : 2},
                {"mode", "FT8"},

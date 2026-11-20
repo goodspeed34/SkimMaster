@@ -57,6 +57,11 @@ mode = "RTTY"
 center_hz = 14080000
 """)
     assert subprocess.run([sys.argv[1], "--daemon"], capture_output=True).returncode != 0
+    database = Path(tmp) / "station.sqlite"
+    worker_schema = "CREATE TABLE workers(id TEXT PRIMARY KEY,plan TEXT NOT NULL,status TEXT NOT NULL)"
+    with closing(sqlite3.connect(database)) as db, db:
+        db.execute(worker_schema)
+        db.execute("INSERT INTO workers VALUES('stale','{}','Worker launched')")
     proc=popen([server,config])
     try:
         with radio.accept()[0] as client:
@@ -77,13 +82,18 @@ center_hz = 14080000
                     pass
                 time.sleep(.05)
             assert b"14074000" in html and b"14080000" in html
-            database = Path(tmp) / "station.sqlite"
             gallery = Path(tmp) / "gallery"
             source = config.read_text()
             slice_ids = set(re.findall(r'^\s*slice_id = "([^"]+)"', source, re.M))
             decoder_ids = set(re.findall(r'^\s*decoder_id = "([^"]+)"', source, re.M))
             assert len(slice_ids) == len(decoder_ids) == 4
             with closing(sqlite3.connect(database)) as db, db:
+                assert db.execute(
+                    "SELECT sql FROM sqlite_schema WHERE name='workers'"
+                ).fetchone() == (worker_schema,)
+                assert db.execute(
+                    "SELECT count(*) FROM workers WHERE id='stale'"
+                ).fetchone() == (0,)
                 plan = json.loads(db.execute(
                     "SELECT plan FROM workers WHERE id='west'"
                 ).fetchone()[0])

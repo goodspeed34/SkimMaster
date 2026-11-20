@@ -1,0 +1,2 @@
+#pragma once
+#define SKIM_SOURCE_URL "https://github.com/goodspeed34/SkimMaster/tree/@VCS_TAG@"
