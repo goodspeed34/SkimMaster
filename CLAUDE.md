@@ -25,7 +25,7 @@ Skim Master is a C++17 daemon that reads wideband IQ from radio front ends or re
 | Monitoring and statistics | Spectrum lets the operator choose an IQ source, and the DX map plots heard grids on a coordinate grid. Spot, heard-station, band/mode and decoder-result pages support their available filters and CSV export. Live spot and decoder pages can pause refresh. Interactive spectrum tuning, detailed RF-band statistics, diagnostic bundles and noise-floor analysis are pending. CPU/memory, active-band counts and several diagnostics still have placeholder values. |
 | Gallery and system tools | The gallery displays the 100 newest images with mode/date filters, individual deletion and filtered CSV index export. System logs and decoder/reception tables export CSV. Diagnostics bundles, browser restore and factory reset are pending. A full server restart is done outside the panel. |
 | Additional receivers | Planned, not implemented: **FlexRadio**, **SunSDR (TCI)** and **SDR Console (DataRepeater)** network sources. Each would be a separate receiver module behind the `receiver/plugin_api.h` plugin boundary. |
-| Deployment validation | Linux is covered by the local build and tests. Win64 CLANG64 binaries and protocol/decoder suites have run under Wine. Native MSYS2 execution, hosted CI, physical SDR interoperability and production reporting acceptance remain unverified. Test runs use fixtures, emulated RTL-TCP and local reporter endpoints. |
+| Deployment validation | GitHub Actions builds, tests and installs on Ubuntu 26.04 and natively on Windows MSYS2 CLANG64 for every push. Physical SDR interoperability and production reporting acceptance remain unverified. Test runs use fixtures, emulated RTL-TCP and local reporter endpoints. |
 
 ## Source layout
 
@@ -41,13 +41,13 @@ libcsdr is mixed-license: the core (`libcsdr.c`, `fft_fftw.c`, `fastddc.c`, `ima
 
 ## Build & test
 
-The Linux build passes all 19 Meson tests. Coverage includes IQ replay, multichannel CW, off-center RTTY, FT8/FT4 and WSPR slots, all six SSTV modes, repeating WAV and reporting exclusion, reporter wire formats, decoder page filters/export, gallery mode/date filters, CSV, deletion and symlink checks, service opt-in/configuration and local worker restart, TOML identity fallback and field preservation, recovery from malformed TOML, WAV and RTL-TCP discovery, receiver edits and schedules, station lifecycle and snapshot validation. See [README.md](README.md) for build and operating commands.
+The Linux and Windows CI builds pass all 19 Meson tests. Coverage includes IQ replay, multichannel CW, off-center RTTY, FT8/FT4 and WSPR slots, all six SSTV modes, repeating WAV and reporting exclusion, reporter wire formats, decoder page filters/export, gallery mode/date filters, CSV, deletion and symlink checks, service opt-in/configuration and local worker restart, TOML identity fallback and field preservation, recovery from malformed TOML, WAV and RTL-TCP discovery, receiver edits and schedules, station lifecycle and snapshot validation. See [README.md](README.md) for build and operating commands.
 
 ## Code style & tooling
 
 - **Google C++ Coding Style** — enforced by `.clang-format` (`BasedOnStyle: Google`).
 - **Simple, plain C++17** — no "fancy" C++20 constructs; `cpp_std=c++17` is pinned in `meson.build`.
-- **clang-format** with a git pre-commit hook that rejects staged `.cpp`/`.h`/`.hpp` files that don't match. The hook lives in `.githooks/pre-commit` and is activated via `git config core.hooksPath .githooks` (already set locally). It silently passes when `clang-format` is absent or no C++ files are staged.
+- **clang-format** with a git pre-commit hook that rejects staged `.cpp`/`.h`/`.hpp` files that don't match. The hook lives in `.githooks/pre-commit` and is activated via `git config core.hooksPath .githooks` (already set locally). It silently passes when `clang-format` is absent or no C++ files are staged. CI runs the same check on every push, and Linux CI also runs the suite under AddressSanitizer/UBSan and ThreadSanitizer.
 
 ## Architecture
 

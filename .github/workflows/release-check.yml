@@ -27,6 +27,56 @@ jobs:
           python3 tests/plugin_sdk.py /opt/SkimMaster
           python3 tests/wav_receiver.py /opt/SkimMaster/bin/SkimMasterTools /opt/SkimMaster/bin/SkimMaster subprojects/ft8_lib/test/wav/191111_110130.wav
 
+  format:
+    runs-on: ubuntu-latest
+    container: ubuntu:26.04
+    steps:
+      - name: Install clang-format
+        run: |
+          apt-get update
+          DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            clang-format git ca-certificates
+      - uses: actions/checkout@v4
+      - name: Check C++ formatting
+        run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          git ls-files '*.cpp' '*.h' '*.hpp' | xargs clang-format --dry-run -Werror
+
+  sanitizers:
+    runs-on: ubuntu-latest
+    container: ubuntu:26.04
+    strategy:
+      fail-fast: false
+      matrix:
+        sanitize: ['address,undefined', 'thread']
+    steps:
+      - name: Install build dependencies
+        run: |
+          apt-get update
+          DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            build-essential git ca-certificates pkg-config meson ninja-build python3 \
+            cmake \
+            libboost-all-dev libnng-dev libfftw3-dev libsqlite3-dev inja-dev \
+            nlohmann-json3-dev libsndfile1-dev libpng-dev libzip-dev libssl-dev \
+            libsoapysdr-dev portaudio19-dev
+      - uses: actions/checkout@v4
+      - name: Build and test with ${{ matrix.sanitize }}
+        # Worker processes report through log files so that a sanitizer error
+        # in a supervised child fails the job even when the test recovers.
+        run: |
+          mkdir -p "$RUNNER_TEMP/san"
+          export ASAN_OPTIONS="log_path=$RUNNER_TEMP/san/asan"
+          export UBSAN_OPTIONS="print_stacktrace=1:log_path=$RUNNER_TEMP/san/ubsan"
+          export TSAN_OPTIONS="second_deadlock_stack=1:log_path=$RUNNER_TEMP/san/tsan"
+          meson setup build --force-fallback-for=csdr,morsedec \
+            -Db_sanitize=${{ matrix.sanitize }} -Db_lundef=false
+          meson compile -C build
+          meson test -C build --print-errorlogs --suite SkimMaster -t 6
+          if ls "$RUNNER_TEMP"/san/* >/dev/null 2>&1; then
+            cat "$RUNNER_TEMP"/san/*
+            exit 1
+          fi
+
   windows:
     runs-on: windows-latest
     defaults:
