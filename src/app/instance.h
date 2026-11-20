@@ -12,12 +12,13 @@
 
 namespace skim {
 class SmInstance;
+struct SmInstanceSettings;
 class SmReceiver;
 class SmSlice;
 class SmSlotDecoder;
-class SlotDecoderSession;
-struct DecoderRoute;
-enum class SampleType;
+class SmSlotDecoderSession;
+struct SmDecoderRoute;
+enum class SmSampleType;
 
 enum class SmMode { Cw, Rtty, Sstv, Ft4, Ft8, Wspr };
 SmMode ParseSmMode(std::string_view name);
@@ -48,10 +49,11 @@ class SmSlotDecoder final : public SmDecoder {
   const SmSlotDecoder* slot_decoder() const override { return this; }
 
   int input_sample_rate() const;
-  SampleType input_sample_type() const;
+  SmSampleType input_sample_type() const;
 
   // The receiver worker owns the live session for the duration of a pass.
-  std::unique_ptr<SlotDecoderSession> Start(const DecoderRoute& route) const;
+  std::unique_ptr<SmSlotDecoderSession> Start(
+      const SmDecoderRoute& route) const;
 
  private:
   friend class SmSlice;
@@ -150,9 +152,8 @@ class SmInstance : public std::enable_shared_from_this<SmInstance> {
  public:
   SmInstance(const SmInstance&) = delete;
 
-  // The topology must have passed station configuration validation.
-  static std::shared_ptr<const SmInstance> FromTopology(
-      const nlohmann::json& topology);
+  static std::shared_ptr<const SmInstance> FromSettings(
+      const SmInstanceSettings& settings);
   static std::shared_ptr<const SmInstance> FromReceiverPlan(
       const nlohmann::json& plan);
   static void Run(const std::filesystem::path& config);

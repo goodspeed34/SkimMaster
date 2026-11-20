@@ -31,7 +31,7 @@ constexpr int kBlockSize = 257;
 constexpr double kPi = 3.14159265358979323846;
 
 // Estimate one tone per contiguous segment from the mean phase increment.
-class ToneDecoder {
+class SmToneDecoder {
  public:
   void Process(complexf sample) {
     std::complex<double> current(sample.i, sample.q);
@@ -55,13 +55,13 @@ class ToneDecoder {
   std::complex<double> previous_{}, correlation_{};
 };
 
-class Slicer {
+class SmSlicer {
  public:
-  explicit Slicer(int offset) : offset_(offset) {
+  explicit SmSlicer(int offset) : offset_(offset) {
     firdes_lowpass_f(taps_.data(), kTapCount, 0.10f, WINDOW_HAMMING);
   }
 
-  void Process(std::vector<complexf>& block, ToneDecoder& decoder) {
+  void Process(std::vector<complexf>& block, SmToneDecoder& decoder) {
     if (block.empty()) return;
     auto tail = history_.size();
     history_.resize(tail + block.size());
@@ -87,7 +87,7 @@ class Slicer {
   std::vector<complexf> history_;
 };
 
-struct Block {
+struct SmBlock {
   uint64_t start = 0;
   uint32_t count = 0;
   std::array<complexf, kBlockSize> samples{};
@@ -97,23 +97,23 @@ void CheckNng(int rc) {
   if (rc) throw std::runtime_error(nng_strerror(rc));
 }
 
-struct Socket {
+struct SmReplaySocket {
   nng_socket handle{};
-  Socket() { CheckNng(nng_pair1_open(&handle)); }
-  ~Socket() { nng_close(handle); }
-  Socket(const Socket&) = delete;
-  Socket& operator=(const Socket&) = delete;
+  SmReplaySocket() { CheckNng(nng_pair1_open(&handle)); }
+  ~SmReplaySocket() { nng_close(handle); }
+  SmReplaySocket(const SmReplaySocket&) = delete;
+  SmReplaySocket& operator=(const SmReplaySocket&) = delete;
 };
 
 void SliceStream(nng_socket input, int offset, int64_t center,
                  std::ostream& output) {
-  Slicer slicer(offset);
-  ToneDecoder decoder;
+  SmSlicer slicer(offset);
+  SmToneDecoder decoder;
   uint64_t start = 0, expected = 0;
   bool active = false;
   std::vector<complexf> samples;
   for (;;) {
-    Block block;
+    SmBlock block;
     size_t size = sizeof(block);
     CheckNng(nng_recv(input, &block, &size, 0));
     if (size != sizeof(block) || block.count > kBlockSize)
@@ -133,7 +133,7 @@ void SliceStream(nng_socket input, int offset, int64_t center,
 }
 
 void ReadReplay(std::istream& input, nng_socket socket) {
-  Block block;
+  SmBlock block;
   uint64_t previous = 0;
   auto flush = [&] {
     CheckNng(nng_send(socket, &block, sizeof(block), 0));
@@ -176,7 +176,7 @@ void RunReplay(std::istream& input, std::ostream& output, int64_t receiver_hz,
       std::abs(slice_hz - receiver_hz) > 18000)
     throw std::runtime_error(
         "12 kHz slice falls outside the receiver passband");
-  Socket capture, slicing;
+  SmReplaySocket capture, slicing;
   auto endpoint =
       "inproc://skim-replay-" + std::to_string(nng_socket_id(capture.handle));
   CheckNng(nng_socket_set_int(capture.handle, NNG_OPT_SENDBUF, 4));

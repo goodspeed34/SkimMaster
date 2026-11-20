@@ -49,7 +49,7 @@ void ReceiveText(const std::string& mode, const char* device, int64_t center,
               gap();
             });
       },
-      [&](Spot spot, uint64_t index) {
+      [&](SmSpot spot, uint64_t index) {
         spot.frequency += center;
         auto utc = origin + static_cast<int64_t>(index / (rate / 1000));
         SaveSlot(database, receiver, mode.c_str(), utc, {spot}, live);
@@ -98,7 +98,7 @@ void ReceiveMode(const std::string& mode, const char* device, int64_t dial,
 
 void ReceiveSlice(const SmSlice& slice, int64_t dial, const char* database,
                   int64_t first_ms, const IqReader& read,
-                  const DecoderRoute* route) {
+                  const SmDecoderRoute* route) {
   const auto& receiver = slice.receiver();
   const auto* device = receiver.device().c_str();
   const auto* mode = ModeName(slice.mode());
@@ -111,10 +111,10 @@ void ReceiveSlice(const SmSlice& slice, int64_t dial, const char* database,
   if (!route) {
     return CollectDecoderResults(
         [&](const std::string& endpoint, const std::atomic_bool& stop) {
-          DecoderRoute local{slot_decoder->id(), endpoint, stop};
+          SmDecoderRoute local{slot_decoder->id(), endpoint, stop};
           ReceiveSlice(slice, dial, database, first_ms, read, &local);
         },
-        [&](DecoderResult result) {
+        [&](SmDecoderResult result) {
           PublishSlot(std::move(result), dial, receiver.id().c_str(), mode,
                       database, !IsReplayReceiver(device));
         });
@@ -210,7 +210,7 @@ void ReceiveSlice(const SmSlice& slice, int64_t dial, const char* database,
     std::cerr << "Dropped " << dropped_slots << " slots for decoder "
               << slot_decoder->id() << '\n';
 }
-void PublishSlot(DecoderResult result, int64_t dial, const char* receiver,
+void PublishSlot(SmDecoderResult result, int64_t dial, const char* receiver,
                  const char* mode, const char* database, bool live) {
   ResolveSlotFrequencies(result.spots, dial);
   SaveSlot(database, receiver, mode, result.utc_ms, result.spots, live);

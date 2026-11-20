@@ -15,9 +15,9 @@
 namespace skim {
 namespace {
 constexpr double kPi = 3.141592653589793;
-class ImageReceiver {
+class SmImageReceiver {
  public:
-  ImageReceiver(int rate, const char* gallery)
+  SmImageReceiver(int rate, const char* gallery)
       : rate_(rate),
         gallery_(gallery),
         pixels_(320 * 256 * 3),
@@ -44,7 +44,7 @@ class ImageReceiver {
     previous_ = z;
     if (!std::isfinite(hz) || std::norm(z) < 1e-14) hz = 0;
     if (row_ < 0) {
-      Header(hz);
+      SmHeader(hz);
       return;
     }
     if (!line_.empty()) {
@@ -75,7 +75,7 @@ class ImageReceiver {
   }
 
  private:
-  void Header(double hz) {
+  void SmHeader(double hz) {
     if (bit_ < 0) {
       if (std::abs(hz - 1900) < 65) {
         leader_ = std::min(rate_, leader_ + 1);
@@ -249,7 +249,7 @@ class ImageReceiver {
 void DecodeSstv(int rate, const char* gallery, const IqStream& stream) {
   if (rate < 12000 || rate > 384000)
     throw std::runtime_error("SSTV needs 12 to 384 kHz IQ");
-  ImageReceiver decoder(rate, gallery);
+  SmImageReceiver decoder(rate, gallery);
   stream(
       [&](const std::complex<float>* data, size_t count) {
         for (size_t i = 0; i < count; ++i) decoder.Sample(data[i]);

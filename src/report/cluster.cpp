@@ -22,7 +22,7 @@ bool WouldBlock(const Error& e) {
          e == boost::asio::error::try_again;
 }
 
-struct Client {
+struct SmClient {
   Tcp::socket socket;
   std::string pending = "Skim Master\r\nPlease enter your call: ";
   std::string input;
@@ -98,7 +98,7 @@ void ServeCluster(const char* database, const char* call, const char* grid,
   listener.bind(Tcp::endpoint(boost::asio::ip::address_v4::loopback(), port));
   listener.listen();
   listener.non_blocking(true);
-  std::vector<Client> clients;
+  std::vector<SmClient> clients;
   static const std::regex sender_pattern("[A-Z0-9/-]{2,16}");
   static const std::regex mode_pattern("CW|RTTY|FT8|FT4|WSPR");
   for (;;) {
@@ -107,10 +107,10 @@ void ServeCluster(const char* database, const char* call, const char* grid,
     listener.accept(socket, error);
     if (!error && clients.size() < 32) {
       socket.non_blocking(true);
-      clients.push_back(Client{std::move(socket),
-                               "Skim Master\r\nPlease enter your call: ",
-                               {},
-                               false});
+      clients.push_back(SmClient{std::move(socket),
+                                 "Skim Master\r\nPlease enter your call: ",
+                                 {},
+                                 false});
     } else if (error && !WouldBlock(error))
       throw boost::system::system_error(error);
     clients.erase(

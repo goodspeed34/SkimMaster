@@ -47,15 +47,15 @@ std::string ShortMd5(const std::string& text) {
            << static_cast<int>(digest[i]);
   return result.str();
 }
-struct Reception {
+struct SmReception {
   int64_t id, hz, utc;
   std::string call, grid, mode, message, time, snr, speed, date, power;
   int64_t dial;
   double dt;
 };
-class Outbox {
+class SmOutbox {
  public:
-  explicit Outbox(const char* path) {
+  explicit SmOutbox(const char* path) {
     SaveSlot(path, "", "", 0, {});
     sqlite3* handle = nullptr;
     int rc = sqlite3_open(path, &handle);
@@ -63,7 +63,7 @@ class Outbox {
     Check(rc);
     Check(sqlite3_busy_timeout(handle, 5000));
   }
-  std::vector<Reception> Pending(const std::string& feed, int max_age = 180) {
+  std::vector<SmReception> Pending(const std::string& feed, int max_age = 180) {
     auto q = Prepare(
         "SELECT "
         "s.rowid,frequency_hz,utc_ms,callsign,coalesce(grid,''),mode,message,"
@@ -82,7 +82,7 @@ class Outbox {
         "report_receipts.spot_id=s.rowid) ORDER BY s.rowid");
     Check(sqlite3_bind_int(q.get(), 1, max_age));
     Bind(q.get(), 2, feed);
-    std::vector<Reception> rows;
+    std::vector<SmReception> rows;
     int rc;
     auto str = [&](int col) {
       return std::string(
@@ -151,7 +151,7 @@ class Outbox {
                                                          sqlite3_close};
 };
 
-bool Allowed(const Json& windows, const Reception& row, const char* type) {
+bool Allowed(const Json& windows, const SmReception& row, const char* type) {
   for (const auto& w : windows) {
     double khz = row.hz / 1000.;
     if (khz < w.at("startFreq").get<double>() ||
@@ -246,7 +246,7 @@ std::string FeedbackKey(const Json& freq, const Json& call, const Json& snr,
   return std::to_string(std::llround(std::stod(Scalar(freq)) * 100)) + "|" +
          Scalar(call) + "|" + Scalar(snr) + "|" + Scalar(speed);
 }
-class RbnFeedback {
+class SmRbnFeedback {
  public:
   void Sent(const Json& spots) {
     for (const auto& spot : spots) {
@@ -349,13 +349,13 @@ class RbnFeedback {
   static constexpr size_t kMaxPending = 3000;
   std::deque<std::pair<double, Json>> pending_;
 };
-void Rbn(const Json& cfg, Outbox& box) {
+void Rbn(const Json& cfg, SmOutbox& box) {
   auto identity = Identity(cfg);
   auto host = cfg.value("host", "x.reversebeacon.net");
   int primary = cfg.value("port", 88), backup = cfg.value("backup_port", 80);
   int failures = 0;
   bool use_backup = false;
-  RbnFeedback feedback;
+  SmRbnFeedback feedback;
   auto handshake = Clock::time_point::min();
   auto next_upload = Clock::time_point::min();
   Json settings;
@@ -462,7 +462,7 @@ void Set(Bytes& packet, int id, Bytes fields) {
   Integer(packet, fields.size() + 4, 2);
   packet.insert(packet.end(), fields.begin(), fields.end());
 }
-void Psk(const Json& cfg, Outbox& box) {
+void Psk(const Json& cfg, SmOutbox& box) {
   using Udp = boost::asio::ip::udp;
   boost::asio::io_context io;
   Udp::resolver resolve(io);
@@ -537,7 +537,7 @@ void Psk(const Json& cfg, Outbox& box) {
     std::this_thread::sleep_for(std::chrono::minutes(5));
   }
 }
-void Wsprnet(const Json& cfg, Outbox& box) {
+void Wsprnet(const Json& cfg, SmOutbox& box) {
   httplib::Client client(cfg.value("endpoint", "https://wsprnet.org"));
   client.set_connection_timeout(10);
   client.set_read_timeout(15);
@@ -604,7 +604,7 @@ void RunReporter(const char* feed, const char* database, const Json& cfg) {
   std::ofstream(lock_path, std::ios::app).close();
   boost::interprocess::file_lock lock(lock_path.c_str());
   if (!lock.try_lock()) throw std::runtime_error("reporter already running");
-  Outbox box(database);
+  SmOutbox box(database);
   if (service == "rbn")
     Rbn(cfg, box);
   else if (service == "psk")

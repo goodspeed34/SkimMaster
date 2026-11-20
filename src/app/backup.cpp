@@ -22,9 +22,9 @@ namespace skim {
 namespace {
 namespace fs = std::filesystem;
 using Zip = std::unique_ptr<zip_t, decltype(&zip_discard)>;
-class Scratch {
+class SmScratch {
  public:
-  explicit Scratch(const fs::path& base) {
+  explicit SmScratch(const fs::path& base) {
     for (int i = 0; i < 10; ++i) {
       path = base / (".skimmaster-" + std::to_string(std::random_device{}()));
       if (fs::create_directory(path)) {
@@ -34,7 +34,7 @@ class Scratch {
     }
     throw std::runtime_error("cannot reserve temporary directory");
   }
-  ~Scratch() {
+  ~SmScratch() {
     std::error_code ec;
     fs::remove_all(path, ec);
   }
@@ -101,10 +101,10 @@ void BackupStation(const char* path, const char* gallery, const char* archive) {
   if (!fs::is_regular_file(path))
     throw std::runtime_error("station database not found");
   auto zip = OpenZip(archive, ZIP_CREATE | ZIP_EXCL);
-  Scratch temp(fs::temp_directory_path());
+  SmScratch temp(fs::temp_directory_path());
   auto snapshot = temp.path / "station.sqlite";
   {
-    Database src(path), dst(snapshot.string().c_str());
+    SmDatabase src(path), dst(snapshot.string().c_str());
     CopyDatabase(src.get(), dst.get());
   }
   uint64_t total = 0, entries = 2;
@@ -132,11 +132,11 @@ void BackupStation(const char* path, const char* gallery, const char* archive) {
 }
 std::shared_ptr<const fs::path> TemporarySnapshot(const char* path,
                                                   const char* gallery) {
-  struct Snapshot {
-    Scratch scratch{fs::temp_directory_path()};
+  struct SmSnapshot {
+    SmScratch scratch{fs::temp_directory_path()};
     fs::path archive = scratch.path / "station-snapshot.zip";
   };
-  auto snapshot = std::make_shared<Snapshot>();
+  auto snapshot = std::make_shared<SmSnapshot>();
   BackupStation(path, gallery, snapshot->archive.string().c_str());
   return {snapshot, &snapshot->archive};
 }
@@ -149,7 +149,7 @@ void RestoreStation(const char* archive, const char* path,
   boost::interprocess::file_lock lock(lockfile.c_str());
   if (!lock.try_lock())
     throw std::runtime_error("stop the station before restoring");
-  Scratch temp(fs::temp_directory_path());
+  SmScratch temp(fs::temp_directory_path());
   auto zip = OpenZip(archive, ZIP_RDONLY | ZIP_CHECKCONS);
   auto count = zip_get_num_entries(zip.get(), 0);
   if (count < 2 || static_cast<uint64_t>(count) > kMaxEntries)
@@ -178,7 +178,7 @@ void RestoreStation(const char* archive, const char* path,
   if (metadata.at("format") != "SkimMaster" || metadata.at("version") != 1)
     throw std::runtime_error("unsupported snapshot");
   auto source = (temp.path / "station.sqlite").string();
-  Database src(source.c_str());
+  SmDatabase src(source.c_str());
   src.Exec("PRAGMA trusted_schema=OFF");
   auto verify = src.Prepare("PRAGMA integrity_check");
   if (sqlite3_step(verify.get()) != SQLITE_ROW ||
@@ -208,7 +208,7 @@ void RestoreStation(const char* archive, const char* path,
     BackupStation(database_name.c_str(), gallery, before.c_str());
   }
   fs::create_directories(gallery);
-  Scratch staged(gallery);
+  SmScratch staged(gallery);
   std::vector<fs::path> added;
   try {
     for (const auto& name : names)
@@ -229,7 +229,7 @@ void RestoreStation(const char* archive, const char* path,
           added.push_back(dest);
         }
       }
-    Database dst(database_name.c_str());
+    SmDatabase dst(database_name.c_str());
     CopyDatabase(src.get(), dst.get());
   } catch (...) {
     for (const auto& file : added) fs::remove(file);

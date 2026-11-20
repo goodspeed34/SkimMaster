@@ -249,8 +249,8 @@ with output.open("w", encoding="utf-8") as stream:
         ("kReceiversScript", receiver_script.read_text(encoding="utf-8")),
     ):
         stream.write(f'constexpr char {var}[] = {raw(content)};\n')
-    stream.write("struct ReferencePage { const char* slug; const char* title; const char* help; };\n")
-    stream.write("constexpr ReferencePage kReferencePages[] = {\n")
+    stream.write("struct SmReferencePage { const char* slug; const char* title; const char* help; };\n")
+    stream.write("constexpr SmReferencePage kReferencePages[] = {\n")
     for page in pages:
         stream.write("  {" + ", ".join(map(raw, page)) + "},\n")
     stream.write("};\n")

@@ -18,15 +18,15 @@
 #endif
 namespace skim {
 namespace {
-boost::dll::shared_library LoadReceiverModule(const ReceiverDriver& driver) {
+boost::dll::shared_library LoadReceiverModule(const SmReceiverDriver& driver) {
   auto path = boost::dll::program_location().parent_path() /
               (std::string("librcvr") + driver.id + SKIM_MODULE_SUFFIX);
   return boost::dll::shared_library(path);
 }
 }  // namespace
 
-const std::vector<ReceiverDriver>& ReceiverDrivers() {
-  static const std::vector<ReceiverDriver> drivers{
+const std::vector<SmReceiverDriver>& ReceiverDrivers() {
+  static const std::vector<SmReceiverDriver> drivers{
       {"soapy", "", "SoapySDR"},
       {"rtltcp", "rtltcp:", "RTL-TCP"},
 #ifdef __linux__
@@ -36,7 +36,7 @@ const std::vector<ReceiverDriver>& ReceiverDrivers() {
   };
   return drivers;
 }
-const ReceiverDriver& DriverFor(std::string_view device) {
+const SmReceiverDriver& DriverFor(std::string_view device) {
   const auto& drivers = ReceiverDrivers();
   for (const auto& driver : drivers)
     if (*driver.prefix && device.rfind(driver.prefix, 0) == 0) return driver;
@@ -45,9 +45,9 @@ const ReceiverDriver& DriverFor(std::string_view device) {
   return drivers.front();
 }
 
-std::vector<FoundReceiver> ProbeReceiver(std::string_view id,
-                                         std::string selector,
-                                         const std::filesystem::path& base) {
+std::vector<SmFoundReceiver> ProbeReceiver(std::string_view id,
+                                           std::string selector,
+                                           const std::filesystem::path& base) {
   const auto& drivers = ReceiverDrivers();
   auto driver = std::find_if(drivers.begin(), drivers.end(),
                              [&](const auto& d) { return id == d.id; });
@@ -64,13 +64,13 @@ std::vector<FoundReceiver> ProbeReceiver(std::string_view id,
         "installed receiver module does not support probing");
   auto& probe = module.get<std::remove_pointer_t<skim_receiver_probe>>(
       "skim_receiver_probe_v1");
-  struct Results {
+  struct SmProbeResults {
     const char* prefix;
-    std::vector<FoundReceiver> devices;
+    std::vector<SmFoundReceiver> devices;
   } results{driver->prefix, {}};
   auto add = [](void* opaque, const char* device, const char* label,
                 uint32_t rate) {
-    auto& result = *static_cast<Results*>(opaque);
+    auto& result = *static_cast<SmProbeResults*>(opaque);
     result.devices.push_back(
         {std::string(result.prefix) + device, label, rate});
     return result.devices.size() >= 64 ? 1 : 0;
@@ -133,14 +133,14 @@ void ReadReceiver(const char* device, int64_t dial_hz, int rate, double gain,
   auto api = module.get<const skim_radio_api*()>("skim_receiver_v1")();
   if (!api || api->version != 1 || api->size < sizeof(*api) || !api->capture)
     throw std::runtime_error("unsupported receiver ABI");
-  struct Callbacks {
+  struct SmCaptureCallbacks {
     const Samples& consume;
     const std::function<void()>& gap;
     std::exception_ptr error;
   };
-  Callbacks callbacks{consume, gap, {}};
+  SmCaptureCallbacks callbacks{consume, gap, {}};
   auto callback = [](void* opaque, const float* data, uint32_t count) {
-    auto& c = *static_cast<Callbacks*>(opaque);
+    auto& c = *static_cast<SmCaptureCallbacks*>(opaque);
     try {
       if (data)
         c.consume(reinterpret_cast<const std::complex<float>*>(data), count);

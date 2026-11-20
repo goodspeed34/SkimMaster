@@ -104,13 +104,13 @@ std::string DisplayField(const Json& row, const char* key,
 constexpr int64_t kMaxFrequency = 1000000000000LL;
 constexpr int64_t kMaxIndex = 1024 * 1024;
 
-std::optional<SliceSettings> FormSlice(const httplib::Request& req) {
+std::optional<SmSliceSettings> FormSlice(const httplib::Request& req) {
   auto mode = req.get_param_value("mode");
   if (mode.empty()) return std::nullopt;
   const bool skimmer = IsSkimmer(mode);
   auto tuning = FormInteger(req, skimmer ? "slice_center" : "dial_hz", 1,
                             kMaxFrequency, skimmer);
-  return SliceSettings{std::move(mode), tuning};
+  return SmSliceSettings{std::move(mode), tuning};
 }
 
 std::string EditReceiverUrl(const std::string& receiver) {
@@ -235,7 +235,7 @@ std::string GalleryUtc(int64_t timestamp_us) {
   return formatted.str();
 }
 
-const ReferencePage* FindPage(const std::string& slug) {
+const SmReferencePage* FindPage(const std::string& slug) {
   for (const auto& page : kReferencePages)
     if (slug == page.slug) return &page;
   return nullptr;
@@ -255,24 +255,25 @@ std::string PanelSlug(const std::string& path) {
   return alias != aliases.end() ? alias->second : path.substr(1);
 }
 
-struct SettingsSnapshot {
-  std::optional<StationSettings> settings;
+struct SmSettingsSnapshot {
+  std::optional<SmInstanceSettings> settings;
   std::shared_ptr<const SmInstance> instance;
   std::string error;
 };
 
-class SettingsCache {
+class SmSettingsCache {
  public:
-  explicit SettingsCache(std::filesystem::path path) : path_(std::move(path)) {
+  explicit SmSettingsCache(std::filesystem::path path)
+      : path_(std::move(path)) {
     Read();
   }
 
-  SettingsSnapshot Read() {
+  SmSettingsSnapshot Read() {
     std::lock_guard<std::mutex> lock(mutex_);
     try {
       auto settings = LoadSettings(path_);
       if (!settings_ || settings_->revision != settings.revision) {
-        auto instance = SmInstance::FromTopology(settings.topology);
+        auto instance = SmInstance::FromSettings(settings);
         settings_ = std::move(settings);
         instance_ = std::move(instance);
       }
@@ -286,7 +287,7 @@ class SettingsCache {
  private:
   std::filesystem::path path_;
   std::mutex mutex_;
-  std::optional<StationSettings> settings_;
+  std::optional<SmInstanceSettings> settings_;
   std::shared_ptr<const SmInstance> instance_;
   std::string error_;
 };
@@ -304,7 +305,7 @@ void Serve(const char* config, const char* address, int port,
   database = database_name.c_str();
   SaveSlot(database, "", "", 0, {});  // Initialize the store for a new station.
   std::filesystem::create_directories(gallery);
-  SettingsCache settings_cache(config);
+  SmSettingsCache settings_cache(config);
   httplib::Server server;
   server.new_task_queue = [] { return new httplib::ThreadPool(4); };
   InitSpectrum(database);
@@ -328,7 +329,7 @@ void Serve(const char* config, const char* address, int port,
   };
   std::mutex config_writes;
   const auto panel_start = std::chrono::steady_clock::now();
-  auto render = [&](const ReferencePage& page, Json model,
+  auto render = [&](const SmReferencePage& page, Json model,
                     httplib::Response& res) {
     model["page"] = page.slug;
     model["title"] = page.title;
@@ -405,7 +406,7 @@ void Serve(const char* config, const char* address, int port,
         receipts = receipt[0][0].get<std::string>();
         last_receipt = receipt[0][1].get<std::string>();
       }
-      const auto identity = settings.identity.value_or(StationIdentity{});
+      const auto identity = settings.identity.value_or(SmStationIdentity{});
       auto explicit_call = get_string("callsign");
       auto explicit_grid = get_string("grid");
       auto effective_call =
@@ -505,7 +506,7 @@ void Serve(const char* config, const char* address, int port,
                {"repeat", true}};
     if (error.empty()) {
       auto settings = LoadSettings(config);
-      auto identity = settings.identity.value_or(StationIdentity{});
+      auto identity = settings.identity.value_or(SmStationIdentity{});
       model["revision"] = settings.revision;
       model["callsign"] = Escape(identity.callsign.c_str());
       model["email"] = Escape(identity.email.c_str());
@@ -553,7 +554,7 @@ void Serve(const char* config, const char* address, int port,
         Json{{"mode", ""}, {"slice_center", ""}, {"dial_hz", ""}};
     bool found = original.empty() && action != "delete";
     std::string probe_driver = "soapy";
-    const auto instance = SmInstance::FromTopology(settings.topology);
+    const auto instance = SmInstance::FromSettings(settings);
     for (const auto* source : instance->receivers()) {
       const auto& receiver = source->settings();
       const auto& name = source->id();
@@ -673,7 +674,7 @@ void Serve(const char* config, const char* address, int port,
   server.Post("/receiver-edit", [&](const auto& req, auto& res) {
     if (!validate_form(req, res)) return;
     try {
-      std::optional<ReceiverSettings> receiver;
+      std::optional<SmReceiverSettings> receiver;
       const auto action = req.get_param_value("action");
       if (action == "slice-save" || action == "slice-delete") {
         auto slice = action == "slice-save" ? FormSlice(req) : std::nullopt;
@@ -925,7 +926,7 @@ void Serve(const char* config, const char* address, int port,
           SetScheduleOverride(database, receiver, schedules.at(*index), 30);
         }
       } else {
-        std::optional<ScheduleSettings> schedule;
+        std::optional<SmScheduleSettings> schedule;
         if (action == "save") {
           int days = 0;
           for (int i = 0; i < 7; ++i)
@@ -934,7 +935,7 @@ void Serve(const char* config, const char* address, int port,
           if (name.size() > 128 ||
               name.find_first_of("\r\n") != std::string::npos)
             throw std::runtime_error("invalid schedule name");
-          schedule = ScheduleSettings{
+          schedule = SmScheduleSettings{
               name,
               FormTime(req, "start"),
               FormTime(req, "end"),
@@ -958,7 +959,7 @@ void Serve(const char* config, const char* address, int port,
   server.Post("/service", [&](const auto& req, auto& res) {
     if (!validate_form(req, res)) return;
     try {
-      ReportingServiceSettings service;
+      SmReportingServiceSettings service;
       service.service = req.get_param_value("service");
       service.enabled = req.has_param("enabled");
       auto callsign = req.get_param_value("callsign");
@@ -1079,7 +1080,7 @@ void Serve(const char* config, const char* address, int port,
         std::lock_guard<std::mutex> lock(config_writes);
         auto revision = req.get_param_value("revision");
         if (req.path == "/wizard") {
-          StationIdentity identity{
+          SmStationIdentity identity{
               req.get_param_value("callsign"), req.get_param_value("email"),
               req.get_param_value("name"), req.get_param_value("grid")};
           for (char& ch : identity.callsign)
@@ -1113,12 +1114,12 @@ void Serve(const char* config, const char* address, int port,
     if (!validate_form(req, res)) return;
     try {
       auto archive = TemporarySnapshot(database, gallery);
-      struct Download {
+      struct SmDownload {
         std::shared_ptr<const std::filesystem::path> archive;
         std::ifstream stream;
       };
-      auto download = std::make_shared<Download>(
-          Download{archive, std::ifstream(*archive, std::ios::binary)});
+      auto download = std::make_shared<SmDownload>(
+          SmDownload{archive, std::ifstream(*archive, std::ios::binary)});
       if (!download->stream)
         throw std::runtime_error("cannot open snapshot for download");
       res.set_header("Content-Disposition",
@@ -1232,7 +1233,7 @@ void Serve(const char* config, const char* address, int port,
       return;
     }
     Json model;
-    SettingsSnapshot settings_view;
+    SmSettingsSnapshot settings_view;
     const bool read_only_station_page = req.path == "/" ||
                                         slug == "system-summary" ||
                                         slug == "receiver-status";
@@ -1264,7 +1265,7 @@ void Serve(const char* config, const char* address, int port,
                 "file on the server.";
     }
     if (slug == "sstv-gallery") {
-      struct ImageRecord {
+      struct SmImageRecord {
         int64_t timestamp_us;
         std::string name;
         std::string mode;
@@ -1295,7 +1296,7 @@ void Serve(const char* config, const char* address, int port,
         res.status = 400;
         gallery_error = error.what();
       }
-      std::vector<ImageRecord> records;
+      std::vector<SmImageRecord> records;
       for (const auto& entry : std::filesystem::directory_iterator(gallery)) {
         auto name = entry.path().filename().string();
         if (!gallery_error.empty() ||
@@ -1380,7 +1381,7 @@ void Serve(const char* config, const char* address, int port,
       } else if (slug == "system-summary") {
         model["callsign"] = "—";
         model["grid"] = "—";
-        std::optional<StationIdentity> configured;
+        std::optional<SmStationIdentity> configured;
         if (settings_view.settings)
           configured = settings_view.settings->identity;
         if (configured) {

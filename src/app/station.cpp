@@ -32,7 +32,7 @@ using Json = nlohmann::json;
 using Process = boost::process::v2::process;
 volatile std::sig_atomic_t stopping = 0;
 void Signal(int) { stopping = 1; }
-void Init(Database& db) {
+void Init(SmDatabase& db) {
   db.Exec(
       "CREATE TABLE IF NOT EXISTS station_runtime(id INTEGER PRIMARY KEY "
       "CHECK(id=1),generation INTEGER NOT NULL)");
@@ -51,7 +51,7 @@ void Init(Database& db) {
       "generation INTEGER NOT NULL)");
 }
 
-Json ReadOverrides(Database& db) {
+Json ReadOverrides(SmDatabase& db) {
   auto rows = db.Prepare(
       "SELECT receiver,schedule,expires FROM schedule_overrides "
       "WHERE expires > unixepoch()");
@@ -71,7 +71,7 @@ Json ReadOverrides(Database& db) {
     throw std::runtime_error("cannot read schedule overrides");
   return overrides;
 }
-void Log(Database& db, const std::string& component,
+void Log(SmDatabase& db, const std::string& component,
          const std::string& message) {
   std::cerr << "[" + component + "] " + message + "\n";
   auto q = db.Prepare("INSERT INTO system_log VALUES(unixepoch(),?,?)");
@@ -274,14 +274,14 @@ Json SmInstance::WorkerPlans(const char* database, const char* gallery,
 }
 
 namespace {
-struct Job {
+struct SmJob {
   std::unique_ptr<Process> process;
   Json plan;
   bool finished = false;
   std::chrono::steady_clock::time_point retry{};
-  ~Job();
+  ~SmJob();
 };
-void Stop(Job& job) {
+void Stop(SmJob& job) {
   if (!job.process) return;
   boost::system::error_code requested;
   if (job.process->running()) job.process->request_exit(requested);
@@ -291,7 +291,7 @@ void Stop(Job& job) {
   job.process->wait();
   job.process.reset();
 }
-Job::~Job() {
+SmJob::~SmJob() {
   try {
     Stop(*this);
   } catch (const std::exception& error) {
@@ -301,7 +301,7 @@ Job::~Job() {
 }  // namespace
 void ValidateStation(const Json& config) { Validate(config); }
 void RestartStation(const char* path) {
-  Database db(path);
+  SmDatabase db(path);
   Init(db);
   db.Exec("UPDATE station_runtime SET generation=generation+1 WHERE id=1");
 }
@@ -310,7 +310,7 @@ void RestartServiceWorker(const char* path, const std::string& service) {
                                              "wsprnet"};
   if (!allowed.count(service))
     throw std::runtime_error("unknown reporting service");
-  Database db(path);
+  SmDatabase db(path);
   Init(db);
   auto request = db.Prepare(
       "INSERT INTO worker_restarts(id,generation) VALUES(?,1) "
@@ -320,7 +320,7 @@ void RestartServiceWorker(const char* path, const std::string& service) {
 }
 void SetScheduleOverride(const char* path, const std::string& receiver,
                          const Json& schedule, int minutes) {
-  Database db(path);
+  SmDatabase db(path);
   Init(db);
   db.Exec("DELETE FROM schedule_overrides WHERE expires <= unixepoch()");
   if (minutes == 0) {
@@ -338,7 +338,7 @@ void SetScheduleOverride(const char* path, const std::string& receiver,
   }
 }
 Json ScheduleOverrides(const char* path) {
-  Database db(path);
+  SmDatabase db(path);
   Init(db);
   return ReadOverrides(db);
 }
@@ -363,7 +363,7 @@ void TestReceiverCapture(const Json& settings) {
         "settings.");
 }
 void RunStationWorker(const char* path, const std::string& id) {
-  Database db(path);
+  SmDatabase db(path);
   auto q = db.Prepare("SELECT plan FROM workers WHERE id=?");
   db.Text(q.get(), 1, id);
   if (sqlite3_step(q.get()) != SQLITE_ROW)
@@ -396,10 +396,10 @@ void SmInstance::Run(const std::filesystem::path& config) {
   if (!lock.try_lock()) throw std::runtime_error("station already running");
   // Persist legacy IDs after taking the station lock.
   const auto settings = PersistDecoderIds(config, startup);
-  auto instance = FromTopology(settings.topology);
+  auto instance = FromSettings(settings);
   auto revision = settings.revision;
   SaveSlot(path, "", "", 0, {});
-  Database db(path);
+  SmDatabase db(path);
   Init(db);
   db.Exec("DELETE FROM workers");
   Log(db, "controller", "Station started with " + config.string());
@@ -410,7 +410,7 @@ void SmInstance::Run(const std::filesystem::path& config) {
 #else
              "SkimMasterTools";
 #endif
-  std::map<std::string, Job> jobs;
+  std::map<std::string, SmJob> jobs;
   std::signal(SIGTERM, Signal);
   std::signal(SIGINT, Signal);
 #ifdef SIGBREAK
@@ -419,7 +419,7 @@ void SmInstance::Run(const std::filesystem::path& config) {
   auto start = [&](std::vector<std::string> args) {
     return std::make_unique<Process>(io, exe, args);
   };
-  Job panel;
+  SmJob panel;
   std::string last_reload_error;
   int64_t generation = -1;
   std::map<std::string, int64_t> service_restarts;
@@ -447,7 +447,7 @@ void SmInstance::Run(const std::filesystem::path& config) {
       auto settings = LoadSettings(config);
       if (settings.revision != revision) {
         settings = PersistDecoderIds(config, std::move(settings));
-        instance = FromTopology(settings.topology);
+        instance = FromSettings(settings);
         revision = std::move(settings.revision);
         Log(db, "controller", "Reloaded station TOML");
       }

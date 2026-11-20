@@ -5,6 +5,7 @@
 #include <stdexcept>
 #include <utility>
 
+#include "app/config.h"
 #include "app/slice_tuning.h"
 #include "decoder/session.h"
 
@@ -39,14 +40,14 @@ SmSlotDecoder::SmSlotDecoder(const SmSlice& slice, std::string id, SmMode mode)
 
 int SmSlotDecoder::input_sample_rate() const { return slice().output_rate(); }
 
-SampleType SmSlotDecoder::input_sample_type() const {
-  return SampleType::MonoAudio;
+SmSampleType SmSlotDecoder::input_sample_type() const {
+  return SmSampleType::MonoAudio;
 }
 
-std::unique_ptr<SlotDecoderSession> SmSlotDecoder::Start(
-    const DecoderRoute& route) const {
-  return std::make_unique<SlotDecoderSession>(
-      ModeName(mode()), DecoderRoute{id(), route.result_endpoint, route.stop},
+std::unique_ptr<SmSlotDecoderSession> SmSlotDecoder::Start(
+    const SmDecoderRoute& route) const {
+  return std::make_unique<SmSlotDecoderSession>(
+      ModeName(mode()), SmDecoderRoute{id(), route.result_endpoint, route.stop},
       input_sample_rate(), input_sample_type());
 }
 
@@ -146,19 +147,21 @@ void SmInstance::AddSlices(SmReceiver& receiver, const Json& slices,
   }
 }
 
-std::shared_ptr<const SmInstance> SmInstance::FromTopology(
-    const Json& topology) {
+std::shared_ptr<const SmInstance> SmInstance::FromSettings(
+    const SmInstanceSettings& settings) {
+  const auto& topology = settings.topology;
   auto graph = std::shared_ptr<SmInstance>(new SmInstance);
-  for (const auto& settings : topology.at("receivers")) {
-    auto& receiver = graph->AddReceiver(settings);
+  for (const auto& configured : topology.at("receivers")) {
+    auto& receiver = graph->AddReceiver(configured);
     // Legacy configurations can be viewed before the supervisor persists IDs.
     auto prefix =
         std::string(1, '\0') + std::to_string(graph->receivers_.size()) + ':';
-    graph->AddSlices(receiver, settings.value("slices", Json::array()),
+    graph->AddSlices(receiver, configured.value("slices", Json::array()),
                      SmSliceGroup::Manual, prefix + "manual:");
-    graph->AddSlices(receiver, settings.value("attached_slices", Json::array()),
+    graph->AddSlices(receiver,
+                     configured.value("attached_slices", Json::array()),
                      SmSliceGroup::Attached, prefix + "attached:");
-    const auto schedules = settings.value("schedules", Json::array());
+    const auto schedules = configured.value("schedules", Json::array());
     for (size_t index = 0; index < schedules.size(); ++index)
       graph->AddSlices(
           receiver, schedules[index].value("slices", Json::array()),

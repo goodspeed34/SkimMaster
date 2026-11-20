@@ -10,7 +10,7 @@ extern "C" {
 }
 
 namespace skim {
-std::vector<Spot> DecodeWspr(const std::vector<float>& audio) {
+std::vector<SmSpot> DecodeWspr(const std::vector<float>& audio) {
   if (audio.size() != 1440000) throw std::runtime_error("incomplete slot");
   // Translate the WSPR USB passband (dial + 1500 Hz) and decimate to 375 Hz.
   constexpr int taps_count = 513, decimation = 32;
@@ -41,7 +41,7 @@ std::vector<Spot> DecodeWspr(const std::vector<float>& audio) {
   int count = 0;
   if (wspr_decode(re.data(), im.data(), n, options, decoded.data(), &count))
     throw std::runtime_error("WSPR decoder initialization failed");
-  std::vector<Spot> spots;
+  std::vector<SmSpot> spots;
   for (int i = 0; i < count; ++i) {
     const auto& r = decoded[i];
     spots.push_back({std::llround(r.freq * 1e6),
@@ -50,7 +50,7 @@ std::vector<Spot> DecodeWspr(const std::vector<float>& audio) {
                      r.loc,
                      r.snr,
                      {},
-                     WsprDetails{0, r.dt, r.pwr}});
+                     SmWsprDetails{0, r.dt, r.pwr}});
   }
   return spots;
 }

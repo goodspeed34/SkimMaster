@@ -15,10 +15,10 @@ inline void Check(int rc) {
   if (rc) throw std::runtime_error(nng_strerror(rc));
 }
 
-struct Socket {
-  explicit Socket(int (*open)(nng_socket*)) { Check(open(&socket)); }
-  ~Socket() { nng_close(socket); }
-  Socket(const Socket&) = delete;
+struct SmResultSocket {
+  explicit SmResultSocket(int (*open)(nng_socket*)) { Check(open(&socket)); }
+  ~SmResultSocket() { nng_close(socket); }
+  SmResultSocket(const SmResultSocket&) = delete;
   nng_socket socket{};
 };
 
@@ -35,7 +35,7 @@ inline void Send(nng_socket socket, const std::string& payload) {
   Check(nng_send(socket, const_cast<char*>(payload.data()), payload.size(), 0));
 }
 
-inline std::string Encode(const DecoderResult& result) {
+inline std::string Encode(const SmDecoderResult& result) {
   auto spots = nlohmann::json::array();
   for (const auto& spot : result.spots) {
     nlohmann::json item{{"relative_freq_hz", spot.frequency},
@@ -53,17 +53,17 @@ inline std::string Encode(const DecoderResult& result) {
       .dump();
 }
 
-inline DecoderResult Decode(nng_msg* message) {
+inline SmDecoderResult Decode(nng_msg* message) {
   const auto* bytes = static_cast<const char*>(nng_msg_body(message));
   auto data = nlohmann::json::parse(bytes, bytes + nng_msg_len(message));
-  DecoderResult result{data.at("decoder_id"), data.at("utc_ms"), {}};
+  SmDecoderResult result{data.at("decoder_id"), data.at("utc_ms"), {}};
   for (const auto& item : data.at("spots")) {
-    Spot spot{item.at("relative_freq_hz"), item.at("message"),
-              item.at("callsign"), item.at("grid")};
+    SmSpot spot{item.at("relative_freq_hz"), item.at("message"),
+                item.at("callsign"), item.at("grid")};
     if (item.contains("snr")) spot.snr = item.at("snr").get<double>();
     if (item.contains("wspr")) {
       const auto& wspr = item.at("wspr");
-      spot.wspr = WsprDetails{0, wspr.at("dt"), wspr.at("power")};
+      spot.wspr = SmWsprDetails{0, wspr.at("dt"), wspr.at("power")};
     }
     result.spots.push_back(std::move(spot));
   }

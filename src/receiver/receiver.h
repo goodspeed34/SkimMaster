@@ -8,21 +8,21 @@
 #include "core/iq.h"
 
 namespace skim {
-struct ReceiverDriver {
+struct SmReceiverDriver {
   const char* id;
   const char* prefix;
   const char* label;
 };
-struct FoundReceiver {
+struct SmFoundReceiver {
   std::string device;
   std::string label;
   uint32_t rate;
 };
-const std::vector<ReceiverDriver>& ReceiverDrivers();
-const ReceiverDriver& DriverFor(std::string_view device);
-std::vector<FoundReceiver> ProbeReceiver(std::string_view driver,
-                                         std::string selector,
-                                         const std::filesystem::path& base);
+const std::vector<SmReceiverDriver>& ReceiverDrivers();
+const SmReceiverDriver& DriverFor(std::string_view device);
+std::vector<SmFoundReceiver> ProbeReceiver(std::string_view driver,
+                                           std::string selector,
+                                           const std::filesystem::path& base);
 inline bool IsWavReceiver(std::string_view device) {
   return device.rfind("wav:", 0) == 0;
 }

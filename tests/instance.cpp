@@ -2,6 +2,8 @@
 
 #include <stdexcept>
 
+#include "app/config.h"
+
 namespace {
 using Json = nlohmann::json;
 
@@ -28,9 +30,11 @@ int main() {
                      {"rate", 96000},
                      {"enabled", false},
                      {"attached_slices", Json::array({text})}};
-  Json topology = {{"receivers", Json::array({east, west})}};
+  SmInstanceSettings settings{};
+  auto& topology = settings.topology;
+  topology["receivers"] = Json::array({east, west});
   topology["services"]["cluster"]["enabled"] = false;
-  auto original = SmInstance::FromTopology(topology);
+  auto original = SmInstance::FromSettings(settings);
   auto decoder = original->find_decoder("ft8");
   Check(decoder && decoder->slot_decoder(), "FT8 needs a slot decoder");
   Check(decoder->mode() == SmMode::Ft8, "decoder mode mismatch");
@@ -63,7 +67,7 @@ int main() {
         "worker plan should preserve links and RF reference");
 
   topology["receivers"][0]["slices"][0]["dial_hz"] = 14075000;
-  const auto reloaded = SmInstance::FromTopology(topology);
+  const auto reloaded = SmInstance::FromSettings(settings);
   cw.reset();
   service.reset();
   original.reset();
@@ -76,7 +80,7 @@ int main() {
 
   topology["receivers"][1]["attached_slices"][0]["decoder_id"] = "ft8";
   try {
-    SmInstance::FromTopology(topology);
+    SmInstance::FromSettings(settings);
   } catch (const std::runtime_error& error) {
     Check(std::string_view(error.what()) == "empty or duplicate decoder_id",
           "unexpected graph validation failure");

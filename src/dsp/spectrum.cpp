@@ -12,14 +12,14 @@ namespace {
 constexpr double pi = 3.14159265358979323846;
 }
 void InitSpectrum(const char* path) {
-  Database db(path);
+  SmDatabase db(path);
   db.Exec(
       "CREATE TABLE IF NOT EXISTS spectra(receiver TEXT,utc INTEGER,center_hz "
       "INTEGER,rate INTEGER,bins TEXT,PRIMARY "
       "KEY(receiver,utc))");
 }
-Spectrum::Spectrum(std::string database, std::string receiver, int rate,
-                   int64_t center)
+SmSpectrum::SmSpectrum(std::string database, std::string receiver, int rate,
+                       int64_t center)
     : database_(std::move(database)),
       receiver_(std::move(receiver)),
       rate_(rate),
@@ -28,7 +28,7 @@ Spectrum::Spectrum(std::string database, std::string receiver, int rate,
   for (size_t i = 0; i < window_.size(); ++i)
     window_[i] = 0.5 - 0.5 * std::cos(2 * pi * i / window_.size());
 }
-void Spectrum::Observe(const std::complex<float>* samples, size_t count) {
+void SmSpectrum::Observe(const std::complex<float>* samples, size_t count) {
   auto utc = std::chrono::duration_cast<std::chrono::seconds>(
                  std::chrono::system_clock::now().time_since_epoch())
                  .count();
@@ -67,7 +67,7 @@ void Spectrum::Observe(const std::complex<float>* samples, size_t count) {
                           10 * std::log10(std::max(power, 1e-14)), -140., 0.))
                     : -140;
   }
-  Database db(database_.c_str());
+  SmDatabase db(database_.c_str());
   auto q = db.Prepare(
       "INSERT OR REPLACE INTO spectra(receiver,utc,center_hz,rate,bins) "
       "VALUES(?,?,?,?,?)");

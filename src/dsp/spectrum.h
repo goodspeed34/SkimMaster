@@ -4,10 +4,10 @@
 #include <cstdint>
 #include <string>
 namespace skim {
-class Spectrum {
+class SmSpectrum {
  public:
-  Spectrum(std::string database, std::string receiver, int rate,
-           int64_t center);
+  SmSpectrum(std::string database, std::string receiver, int rate,
+             int64_t center);
   void Observe(const std::complex<float>* samples, size_t count);
 
  private:

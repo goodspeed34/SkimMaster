@@ -57,7 +57,7 @@ int Run(int argc, char** argv) {
     skim::RunStationWorker(argv[2], argv[3]);
   else if (cmd == "--test-receiver" && argc == 3) {
     const auto settings = nlohmann::json::parse(argv[2]);
-    struct ReceivedIq {};
+    struct SmReceivedIq {};
     try {
       const auto device = settings.at("device").get<std::string>();
       if (device.empty() || device == "-")
@@ -66,10 +66,10 @@ int Run(int argc, char** argv) {
           device.c_str(), settings.at("center_hz"), settings.at("rate"),
           settings.value("gain_db", NAN), settings.value("ppm", NAN),
           [](const auto*, size_t count) {
-            if (count) throw ReceivedIq{};
+            if (count) throw SmReceivedIq{};
           },
           [] {});
-    } catch (const ReceivedIq&) {
+    } catch (const SmReceivedIq&) {
       return 0;
     }
     throw std::runtime_error("receiver ended without IQ samples");

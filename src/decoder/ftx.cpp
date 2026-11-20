@@ -21,8 +21,8 @@ std::string Field(const std::string& text, const ftx_message_offsets_t& fields,
 }
 }  // namespace
 
-std::vector<Spot> DecodeFtx(const std::string& mode,
-                            const std::vector<float>& audio) {
+std::vector<SmSpot> DecodeFtx(const std::string& mode,
+                              const std::vector<float>& audio) {
   int samples = mode == "FT8" ? 180000 : 90000;
   if (audio.size() != static_cast<size_t>(samples))
     throw std::runtime_error("incomplete slot");
@@ -43,7 +43,7 @@ std::vector<Spot> DecodeFtx(const std::string& mode,
   std::array<ftx_candidate_t, 140> candidates;
   int count = ftx_find_candidates(&monitor.wf, candidates.size(),
                                   candidates.data(), 10);
-  std::vector<Spot> spots;
+  std::vector<SmSpot> spots;
 
   for (int i = 0; i < count; ++i) {
     const auto& c = candidates[i];
@@ -61,7 +61,7 @@ std::vector<Spot> DecodeFtx(const std::string& mode,
                      monitor.symbol_period);
     // Candidates are sorted strongest first. Neighboring FFT bins often
     // recover the same transmission.
-    if (std::none_of(spots.begin(), spots.end(), [&](const Spot& spot) {
+    if (std::none_of(spots.begin(), spots.end(), [&](const SmSpot& spot) {
           return spot.message == text &&
                  std::abs(spot.frequency - hz) <= 1.0 / monitor.symbol_period;
         }))

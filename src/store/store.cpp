@@ -7,7 +7,7 @@
 
 namespace skim {
 void SaveSlot(const char* database, const char* receiver, const char* mode,
-              int64_t utc_ms, const std::vector<Spot>& spots, bool live) {
+              int64_t utc_ms, const std::vector<SmSpot>& spots, bool live) {
   sqlite3* handle = nullptr;
   int rc = sqlite3_open(database, &handle);
   std::unique_ptr<sqlite3, decltype(&sqlite3_close)> db(handle, sqlite3_close);

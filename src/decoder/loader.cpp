@@ -15,26 +15,27 @@ namespace skim {
 namespace {
 constexpr auto kWait = std::chrono::milliseconds(25);
 
-SlotMode ParseMode(const std::string& mode) {
-  if (mode == "FT4") return SlotMode::Ft4;
-  if (mode == "FT8") return SlotMode::Ft8;
-  if (mode == "WSPR") return SlotMode::Wspr;
+SmSlotMode ParseMode(const std::string& mode) {
+  if (mode == "FT4") return SmSlotMode::Ft4;
+  if (mode == "FT8") return SmSlotMode::Ft8;
+  if (mode == "WSPR") return SmSlotMode::Wspr;
   throw std::runtime_error("supported slot modes are FT4, FT8 and WSPR");
 }
 
-boost::dll::shared_library LoadDecoder(SlotMode mode) {
-  std::string name = mode == SlotMode::Wspr ? "decoderwspr" : "decoderftx";
+boost::dll::shared_library LoadDecoder(SmSlotMode mode) {
+  std::string name = mode == SmSlotMode::Wspr ? "decoderwspr" : "decoderftx";
   return boost::dll::shared_library(
       boost::dll::program_location().parent_path() /
       ("lib" + name + SKIM_MODULE_SUFFIX));
 }
 }  // namespace
 
-struct SlotDecoderSession::State {
-  State(SlotMode mode, const DecoderRoute& route, int rate, SampleType type)
+struct SmSlotDecoderSession::SmState {
+  SmState(SmSlotMode mode, const SmDecoderRoute& route, int rate,
+          SmSampleType type)
       : module(LoadDecoder(mode)), cancelled(route.stop) {
-    const auto* decoder =
-        module.get<const SlotDecoder*(SlotMode)>("skim_slot_decoder_v2")(mode);
+    const auto* decoder = module.get<const SmSlotDecoderPlugin*(SmSlotMode)>(
+        "skim_slot_decoder_v2")(mode);
     if (!decoder) throw std::runtime_error("slot decoder mode unavailable");
     const auto& metadata = decoder->metadata();
     if (metadata.supported_mode != mode || metadata.required_type != type ||
@@ -45,7 +46,7 @@ struct SlotDecoderSession::State {
                             stop, FftPlannerMutex());
   }
 
-  ~State() {
+  ~SmState() {
     stop = true;
     if (worker.valid()) worker.wait();
   }
@@ -65,16 +66,17 @@ struct SlotDecoderSession::State {
   std::future<void> worker;
 };
 
-SlotDecoderSession::SlotDecoderSession(const std::string& mode,
-                                       const DecoderRoute& route,
-                                       int sample_rate, SampleType sample_type)
-    : state_(std::make_unique<State>(ParseMode(mode), route, sample_rate,
-                                     sample_type)) {}
+SmSlotDecoderSession::SmSlotDecoderSession(const std::string& mode,
+                                           const SmDecoderRoute& route,
+                                           int sample_rate,
+                                           SmSampleType sample_type)
+    : state_(std::make_unique<SmState>(ParseMode(mode), route, sample_rate,
+                                       sample_type)) {}
 
-SlotDecoderSession::~SlotDecoderSession() = default;
+SmSlotDecoderSession::~SmSlotDecoderSession() = default;
 
-bool SlotDecoderSession::Submit(DecoderSlot slot, bool wait) {
-  std::optional<DecoderSlot> item(std::move(slot));
+bool SmSlotDecoderSession::Submit(SmDecoderSlot slot, bool wait) {
+  std::optional<SmDecoderSlot> item(std::move(slot));
   state_->CheckRunning();
   if (!wait) return state_->queue.try_enqueue(std::move(item));
   while (!state_->queue.wait_enqueue_timed(std::move(item), kWait))
@@ -82,7 +84,7 @@ bool SlotDecoderSession::Submit(DecoderSlot slot, bool wait) {
   return true;
 }
 
-void SlotDecoderSession::Finish() {
+void SmSlotDecoderSession::Finish() {
   while (!state_->queue.wait_enqueue_timed(std::nullopt, kWait))
     state_->CheckRunning();
   state_->worker.get();
@@ -91,9 +93,9 @@ void SlotDecoderSession::Finish() {
 void CollectDecoderResults(
     const std::function<void(const std::string&, const std::atomic_bool&)>&
         produce,
-    const std::function<void(DecoderResult)>& collect) {
+    const std::function<void(SmDecoderResult)>& collect) {
   using namespace decoder_wire;
-  Socket socket(nng_rep0_open);
+  SmResultSocket socket(nng_rep0_open);
   Check(nng_socket_set_ms(socket.socket, NNG_OPT_RECVTIMEO, kWait.count()));
   Check(nng_socket_set_ms(socket.socket, NNG_OPT_SENDTIMEO, 5000));
   const std::string endpoint = "inproc://skimmaster-results-" +
@@ -126,26 +128,27 @@ void CollectDecoderResults(
   producer.get();
 }
 
-void ResolveSlotFrequencies(std::vector<Spot>& spots, int64_t reference_hz) {
+void ResolveSlotFrequencies(std::vector<SmSpot>& spots, int64_t reference_hz) {
   for (auto& spot : spots) {
     spot.frequency += reference_hz;
     if (spot.wspr) spot.wspr->dial = reference_hz;
   }
 }
 
-std::vector<Spot> DecodeAudio(const std::string& mode, std::vector<float> audio,
-                              int64_t dial, int64_t utc_ms) {
+std::vector<SmSpot> DecodeAudio(const std::string& mode,
+                                std::vector<float> audio, int64_t dial,
+                                int64_t utc_ms) {
   if (audio.size() != static_cast<size_t>(SlotSamples(mode)))
     throw std::runtime_error("incomplete slot");
-  std::vector<Spot> spots;
+  std::vector<SmSpot> spots;
   CollectDecoderResults(
       [&](const std::string& endpoint, const std::atomic_bool& stop) {
-        SlotDecoderSession session(mode, {"file", endpoint, stop}, 12000,
-                                   SampleType::MonoAudio);
+        SmSlotDecoderSession session(mode, {"file", endpoint, stop}, 12000,
+                                     SmSampleType::MonoAudio);
         session.Submit({utc_ms, std::move(audio)}, true);
         session.Finish();
       },
-      [&](DecoderResult result) {
+      [&](SmDecoderResult result) {
         spots = std::move(result.spots);
         ResolveSlotFrequencies(spots, dial);
       });

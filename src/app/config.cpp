@@ -65,7 +65,7 @@ Json Value(const toml::node& node) {
   throw std::runtime_error("unsupported TOML value");
 }
 
-toml::table SliceTable(const SliceSettings& settings) {
+toml::table SliceTable(const SmSliceSettings& settings) {
   toml::table slice{{"mode", settings.mode}};
   const bool skimmer = IsSkimmer(settings.mode);
   if (settings.frequency)
@@ -167,7 +167,7 @@ std::string Revision(const std::string& source) {
   return hex;
 }
 
-StationSettings Parse(const fs::path& file, std::string source) {
+SmInstanceSettings Parse(const fs::path& file, std::string source) {
   auto table = toml::parse(source, file.string());
   auto revision = Revision(source);
   // Ignore legacy login settings and omit them from the configuration shown
@@ -204,10 +204,10 @@ StationSettings Parse(const fs::path& file, std::string source) {
   auto topology = Json{{"receivers", data.value("receivers", Json::array())},
                        {"services", data.value("services", Json::object())}};
   auto service_options = data.value("services", Json::object());
-  std::optional<StationIdentity> identity;
+  std::optional<SmStationIdentity> identity;
   if (data.contains("station")) {
     const auto& station = data.at("station");
-    identity = StationIdentity{
+    identity = SmStationIdentity{
         station.value("callsign", ""), station.value("email", ""),
         station.value("name", ""), station.value("grid", "")};
     if (!std::regex_match(identity->callsign, std::regex("[A-Z0-9/-]{2,16}")))
@@ -274,7 +274,7 @@ void CreateDefaultSettings(const fs::path& file) {
     throw std::runtime_error("cannot write " + file.string());
   }
 }
-StationSettings LoadSettings(const fs::path& file) {
+SmInstanceSettings LoadSettings(const fs::path& file) {
   if (!fs::is_regular_file(file) || fs::file_size(file) > 1024 * 1024)
     throw std::runtime_error("expected a station TOML file of at most 1 MiB");
   std::ifstream input(file, std::ios::binary);
@@ -316,8 +316,8 @@ void SaveSettings(const fs::path& file, const std::string& source,
   fs::remove(staging, ignored);
 }
 
-StationSettings PersistDecoderIds(const fs::path& file,
-                                  StationSettings current) {
+SmInstanceSettings PersistDecoderIds(const fs::path& file,
+                                     SmInstanceSettings current) {
   auto with_ids = WithDecoderIds(current.source);
   if (with_ids == current.source) return current;
   SaveSettings(file, with_ids, current.revision);
@@ -326,7 +326,7 @@ StationSettings PersistDecoderIds(const fs::path& file,
 
 void UpdateReceiver(const fs::path& file, const std::string& expected,
                     const std::string& original,
-                    const std::optional<ReceiverSettings>& receiver) {
+                    const std::optional<SmReceiverSettings>& receiver) {
   const auto current = LoadSettings(file);
   if (current.revision != expected)
     throw std::runtime_error("configuration changed; reload and retry");
@@ -401,7 +401,7 @@ void UpdateReceiver(const fs::path& file, const std::string& expected,
 void UpdateSlice(const fs::path& file, const std::string& expected,
                  const std::string& receiver, const std::string& group,
                  std::optional<size_t> schedule, size_t index,
-                 const std::optional<SliceSettings>& slice) {
+                 const std::optional<SmSliceSettings>& slice) {
   const auto current = LoadSettings(file);
   if (current.revision != expected)
     throw std::runtime_error("configuration changed; reload and retry");
@@ -428,7 +428,7 @@ void UpdateSlice(const fs::path& file, const std::string& expected,
 void UpdateSchedule(const fs::path& file, const std::string& expected,
                     const std::string& receiver, std::optional<size_t> index,
                     bool duplicate,
-                    const std::optional<ScheduleSettings>& schedule) {
+                    const std::optional<SmScheduleSettings>& schedule) {
   const auto current = LoadSettings(file);
   if (current.revision != expected)
     throw std::runtime_error("configuration changed; reload and retry");
@@ -476,7 +476,7 @@ void UpdateSchedule(const fs::path& file, const std::string& expected,
 }
 
 void UpdateReportingService(const fs::path& file, const std::string& expected,
-                            const ReportingServiceSettings& service) {
+                            const SmReportingServiceSettings& service) {
   static const std::set<std::string> names{"cluster", "psk", "rbn", "wsprnet"};
   if (!names.count(service.service))
     throw std::runtime_error("unknown reporting service");
@@ -518,7 +518,7 @@ void UpdateReportingService(const fs::path& file, const std::string& expected,
 }
 
 void SaveWizard(const fs::path& file, const std::string& expected,
-                const StationIdentity& identity, const std::string& receiver,
+                const SmStationIdentity& identity, const std::string& receiver,
                 const std::string& device, int rate,
                 std::optional<int64_t> dial, const std::string& mode,
                 std::optional<int64_t> center, std::optional<int64_t> utc,

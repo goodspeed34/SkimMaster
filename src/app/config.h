@@ -6,20 +6,20 @@
 #include <string>
 
 namespace skim {
-struct StationIdentity {
+struct SmStationIdentity {
   std::string callsign;
   std::string email;
   std::string name;
   std::string grid;
 };
 
-struct StationSettings {
+struct SmInstanceSettings {
   std::string address;
   int port;
   bool first_run_wizard;
   std::string database;
   std::string gallery;
-  std::optional<StationIdentity> identity;
+  std::optional<SmStationIdentity> identity;
   nlohmann::json topology;
   // Raw [services.*] tables before station identity fallback is applied.
   nlohmann::json services;
@@ -27,7 +27,7 @@ struct StationSettings {
   std::string revision;
 };
 
-struct ReportingServiceSettings {
+struct SmReportingServiceSettings {
   std::string service;
   bool enabled = false;
   std::optional<std::string> callsign;
@@ -40,7 +40,7 @@ struct ReportingServiceSettings {
   std::optional<int> backup_port;
 };
 
-struct ReceiverSettings {
+struct SmReceiverSettings {
   std::string name;
   std::string device;
   int rate = 192000;
@@ -55,12 +55,12 @@ struct ReceiverSettings {
   std::optional<int64_t> dial;
 };
 
-struct SliceSettings {
+struct SmSliceSettings {
   std::string mode;
   std::optional<int64_t> frequency;
 };
 
-struct ScheduleSettings {
+struct SmScheduleSettings {
   std::string name;
   int start_minute;
   int end_minute;
@@ -68,31 +68,31 @@ struct ScheduleSettings {
   int64_t center_hz;
   int days;
   bool enabled;
-  std::optional<SliceSettings> slice;
+  std::optional<SmSliceSettings> slice;
 };
 
 void CreateDefaultSettings(const std::filesystem::path& file);
-StationSettings LoadSettings(const std::filesystem::path& file);
-StationSettings PersistDecoderIds(const std::filesystem::path& file,
-                                  StationSettings current);
+SmInstanceSettings LoadSettings(const std::filesystem::path& file);
+SmInstanceSettings PersistDecoderIds(const std::filesystem::path& file,
+                                     SmInstanceSettings current);
 void SaveSettings(const std::filesystem::path& file, const std::string& source,
                   const std::string& expected);
 void UpdateReceiver(const std::filesystem::path& file,
                     const std::string& expected, const std::string& original,
-                    const std::optional<ReceiverSettings>& receiver);
+                    const std::optional<SmReceiverSettings>& receiver);
 void UpdateSlice(const std::filesystem::path& file, const std::string& expected,
                  const std::string& receiver, const std::string& group,
                  std::optional<size_t> schedule, size_t index,
-                 const std::optional<SliceSettings>& slice);
+                 const std::optional<SmSliceSettings>& slice);
 void UpdateSchedule(const std::filesystem::path& file,
                     const std::string& expected, const std::string& receiver,
                     std::optional<size_t> index, bool duplicate,
-                    const std::optional<ScheduleSettings>& schedule);
+                    const std::optional<SmScheduleSettings>& schedule);
 void UpdateReportingService(const std::filesystem::path& file,
                             const std::string& expected,
-                            const ReportingServiceSettings& service);
+                            const SmReportingServiceSettings& service);
 void SaveWizard(const std::filesystem::path& file, const std::string& expected,
-                const StationIdentity& identity, const std::string& receiver,
+                const SmStationIdentity& identity, const std::string& receiver,
                 const std::string& device, int rate,
                 std::optional<int64_t> dial, const std::string& mode,
                 std::optional<int64_t> center, std::optional<int64_t> utc,

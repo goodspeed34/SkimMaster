@@ -16,9 +16,9 @@
 namespace skim {
 namespace {
 // ITA2 asynchronous 45.45 baud, least-significant data bit first.
-class Rtty {
+class SmRtty {
  public:
-  explicit Rtty(double mark) {
+  explicit SmRtty(double mark) {
     rotation_[0] =
         std::polar(1., -2 * 3.141592653589793 * (mark - 170) / 12000);
     rotation_[1] = std::polar(1., -2 * 3.141592653589793 * mark / 12000);
@@ -82,9 +82,9 @@ class Rtty {
 
 // Accumulate energy in mark/space pairs over several symbols before opening a
 // channel. Replay the acquisition window into each newly detected channel.
-class RttyBank {
+class SmRttyBank {
  public:
-  RttyBank() {
+  SmRttyBank() {
     Reset();
     std::lock_guard<std::mutex> lock(FftPlannerMutex());
     plan_ = fftwf_plan_dft_1d(kBins,
@@ -96,7 +96,7 @@ class RttyBank {
     for (int i = 0; i < kBins; ++i)
       window_[i] = .5f - .5f * std::cos(2 * 3.141592653589793 * i / kBins);
   }
-  ~RttyBank() {
+  ~SmRttyBank() {
     std::lock_guard<std::mutex> lock(FftPlannerMutex());
     fftwf_destroy_plan(plan_);
   }
@@ -174,13 +174,13 @@ class RttyBank {
   std::array<float, kBins> window_{}, power_{};
   std::array<std::complex<float>, kBins> frame_{}, fft_{};
   std::array<std::complex<float>, 3 * kBins> acquisition_{};
-  std::map<int, Rtty> channels_;
+  std::map<int, SmRtty> channels_;
   std::map<int, int> age_;
 };
 
-class Morse {
+class SmMorse {
  public:
-  Morse() {
+  SmMorse() {
     morsedec_config config;
     md_config_init(&config);
     config.sample_rate = 48000;
@@ -190,7 +190,7 @@ class Morse {
     decoder_.reset(md_new_iq_with_threads(&config, 1));
     if (!decoder_) throw std::runtime_error("CW decoder initialization failed");
   }
-  ~Morse() {
+  ~SmMorse() {
     std::lock_guard<std::mutex> lock(FftPlannerMutex());
     decoder_.reset();
   }
@@ -241,10 +241,10 @@ class Morse {
 void DecodeText(bool cw, const IqStream& stream, const TextSpot& on_spot,
                 const std::function<void()>& gap) {
   uint64_t index = 0;
-  std::unique_ptr<Morse> morse;
-  if (cw) morse = std::make_unique<Morse>();
-  std::unique_ptr<RttyBank> rtty;
-  if (!cw) rtty = std::make_unique<RttyBank>();
+  std::unique_ptr<SmMorse> morse;
+  if (cw) morse = std::make_unique<SmMorse>();
+  std::unique_ptr<SmRttyBank> rtty;
+  if (!cw) rtty = std::make_unique<SmRttyBank>();
   stream(
       [&](const std::complex<float>* buf, size_t count) {
         auto emit = [&](std::string text, int64_t offset, std::string call,

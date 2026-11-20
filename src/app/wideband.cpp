@@ -29,20 +29,20 @@ using Json = nlohmann::json;
 void Check(int rc) {
   if (rc) throw std::runtime_error(nng_strerror(rc));
 }
-struct Socket {
+struct SmSliceSocket {
   nng_socket socket{};
-  Socket() { Check(nng_pair1_open(&socket)); }
-  ~Socket() { nng_close(socket); }
-  Socket(const Socket&) = delete;
+  SmSliceSocket() { Check(nng_pair1_open(&socket)); }
+  ~SmSliceSocket() { nng_close(socket); }
+  SmSliceSocket(const SmSliceSocket&) = delete;
 };
-struct Header {
+struct SmHeader {
   uint64_t sequence, generation;
 };
 // A windowed-sinc FIR tabulated at 64 fractional input phases. Integer
 // phase accumulation keeps recorded slot boundaries stable across blocks.
-class FractionalDecimator {
+class SmFractionalDecimator {
  public:
-  FractionalDecimator(int input_rate, int output_rate, int length)
+  SmFractionalDecimator(int input_rate, int output_rate, int length)
       : input_rate_(input_rate),
         output_rate_(output_rate),
         length_(length),
@@ -92,10 +92,10 @@ class FractionalDecimator {
   std::vector<std::vector<float>> phases_;
 };
 
-class SlicePipeline {
+class SmSlicePipeline {
  public:
-  SlicePipeline(const SmSlice& slice, int64_t center, const Json& root,
-                std::optional<DecoderRoute> route)
+  SmSlicePipeline(const SmSlice& slice, int64_t center, const Json& root,
+                  std::optional<SmDecoderRoute> route)
       : file_(IsReplayReceiver(slice.receiver().device())) {
     const auto& device = slice.receiver().device();
     const auto rate = slice.receiver().rate();
@@ -111,8 +111,8 @@ class SlicePipeline {
     shift_ = -static_cast<float>(offset) / rate;
     filter_length_ = 16 * ((rate + out_rate_ - 1) / out_rate_) + 1;
     if (rate % out_rate_)
-      fractional_ = std::make_unique<FractionalDecimator>(rate, out_rate_,
-                                                          filter_length_);
+      fractional_ = std::make_unique<SmFractionalDecimator>(rate, out_rate_,
+                                                            filter_length_);
     else {
       taps_.resize(filter_length_);
       firdes_lowpass_f(taps_.data(), taps_.size(), 0.45f / step_,
@@ -143,7 +143,7 @@ class SlicePipeline {
                      route ? &*route : nullptr);
     });
   }
-  ~SlicePipeline() {
+  ~SmSlicePipeline() {
     if (worker_.valid()) {
       nng_close(rx_.socket);
       worker_.wait();
@@ -179,8 +179,8 @@ class SlicePipeline {
     const auto count = output_.size();
     if (!count) return;
     nng_msg* msg = nullptr;
-    Check(nng_msg_alloc(&msg, sizeof(Header) + count * sizeof(complexf)));
-    Header h{seq_++, generation_};
+    Check(nng_msg_alloc(&msg, sizeof(SmHeader) + count * sizeof(complexf)));
+    SmHeader h{seq_++, generation_};
     auto bytes = static_cast<char*>(nng_msg_body(msg));
     std::memcpy(bytes, &h, sizeof(h));
     std::memcpy(bytes + sizeof(h), output_.data(), count * sizeof(complexf));
@@ -231,9 +231,10 @@ class SlicePipeline {
       std::unique_ptr<nng_msg, decltype(&nng_msg_free)> guard(m, nng_msg_free);
       size_t bytes = nng_msg_len(m);
       if (!bytes) return;
-      if (bytes < sizeof(Header) || (bytes - sizeof(Header)) % sizeof(complexf))
+      if (bytes < sizeof(SmHeader) ||
+          (bytes - sizeof(SmHeader)) % sizeof(complexf))
         throw std::runtime_error("malformed slice block");
-      Header h;
+      SmHeader h;
       auto buf = static_cast<const char*>(nng_msg_body(m));
       std::memcpy(&h, buf, sizeof(h));
       if (h.sequence != expected || h.generation != generation) gap();
@@ -249,12 +250,12 @@ class SlicePipeline {
   bool file_;
   bool received_ = false;
   int step_, out_rate_, filter_length_;
-  std::unique_ptr<FractionalDecimator> fractional_;
+  std::unique_ptr<SmFractionalDecimator> fractional_;
   float shift_, phase_ = 0;
   std::vector<float> taps_;
   std::vector<complexf> input_, history_, output_;
   uint64_t generation_ = 0, seq_ = 0, drops_ = 0;
-  Socket tx_, rx_;
+  SmSliceSocket tx_, rx_;
   std::future<void> worker_;
 };
 }  // namespace
@@ -282,15 +283,15 @@ void SmReceiver::RunWideband() const {
   const bool live = !IsReplayReceiver(device);
   CollectDecoderResults(
       [&](const std::string& endpoint, const std::atomic_bool& stop) {
-        Spectrum spectrum(database, id, rate, center);
+        SmSpectrum spectrum(database, id, rate, center);
         do {
           // A new pass starts with fresh channelizer and slot state.
-          std::vector<std::unique_ptr<SlicePipeline>> pipelines;
+          std::vector<std::unique_ptr<SmSlicePipeline>> pipelines;
           for (const auto* slice : slices()) {
-            std::optional<DecoderRoute> route;
+            std::optional<SmDecoderRoute> route;
             if (const auto* decoder = slice->decoder().slot_decoder())
-              route.emplace(DecoderRoute{decoder->id(), endpoint, stop});
-            pipelines.push_back(std::make_unique<SlicePipeline>(
+              route.emplace(SmDecoderRoute{decoder->id(), endpoint, stop});
+            pipelines.push_back(std::make_unique<SmSlicePipeline>(
                 *slice, center, root, std::move(route)));
           }
           const auto started = std::chrono::steady_clock::now();
@@ -318,7 +319,7 @@ void SmReceiver::RunWideband() const {
           for (auto& pipeline : pipelines) pipeline->Finish();
         } while (repeat && !stop.load());
       },
-      [&](DecoderResult result) {
+      [&](SmDecoderResult result) {
         const auto decoder = instance().find_decoder(result.decoder_id);
         if (!decoder || !decoder->slot_decoder() ||
             &decoder->slice().receiver() != this)

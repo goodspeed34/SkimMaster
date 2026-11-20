@@ -12,8 +12,8 @@ int SlotSamples(const std::string& mode) {
   return mode == "WSPR" ? 1440000 : (mode == "FT8" ? 180000 : 90000);
 }
 
-std::vector<Spot> DecodeSlot(const std::string& mode, const char* path,
-                             int64_t dial, int64_t utc_ms) {
+std::vector<SmSpot> DecodeSlot(const std::string& mode, const char* path,
+                               int64_t dial, int64_t utc_ms) {
   SF_INFO info{};
   std::unique_ptr<SNDFILE, decltype(&sf_close)> file(
       sf_open(path, SFM_READ, &info), sf_close);

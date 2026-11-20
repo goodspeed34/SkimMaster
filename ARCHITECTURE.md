@@ -21,7 +21,7 @@ Each bundled receiver module exports `skim_receiver_probe_v1` alongside the exis
 
 ## Station objects
 
-`SmInstance` supervises worker processes and provides the station object graph. A receiver exposes its slices, a slice exposes its decoder, and each child can navigate to its parent. The instance can also find receivers, slices, decoders, and services by ID. The configured graph includes disabled receivers and slices outside the current schedule or passband.
+`LoadSettings()` reads and validates the station TOML into `SmInstanceSettings`. `SmInstance::FromSettings()` builds the station object graph from those settings, and `SmInstance::Run()` supervises the worker processes. A receiver exposes its slices, a slice exposes its decoder, and each child can navigate to its parent. The instance can also find receivers, slices, decoders, and services by ID. The configured graph includes disabled receivers and slices outside the current schedule or passband.
 
 Lookup handles keep their graph snapshot alive across a configuration reload. Each receiver process builds its own snapshot from its active SQLite plan, using the same IDs as the supervisor. Capture, channelizers, and decoder sessions live in the worker. A timed result resolves its decoder through that worker snapshot and uses the slice's RF reference.
 

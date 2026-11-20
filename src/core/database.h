@@ -6,9 +6,9 @@
 #include <string>
 
 namespace skim {
-class Database {
+class SmDatabase {
  public:
-  explicit Database(const char* file) {
+  explicit SmDatabase(const char* file) {
     sqlite3* handle = nullptr;
     int rc = sqlite3_open(file, &handle);
     db_.reset(handle);
