@@ -5,7 +5,7 @@
 namespace skim {
 // The station database schema this build reads and writes. Add a migration
 // step in schema.cpp and increase this number to change the schema.
-constexpr int kStationSchemaVersion = 2;
+constexpr int kStationSchemaVersion = 3;
 
 // Brings an open station database up to kStationSchemaVersion. Each process
 // may call it on open; the steps run once inside an immediate transaction.

@@ -269,6 +269,16 @@
   <button class="btn-native">Apply Filters</button> <a href="/{{ page }}">Clear Filters</a>
   <button class="btn-native" name="format" value="csv">Download CSV</button>
 </form>
+{% if live_text %}
+<div class="table-scroll">
+<table class="cfg-table" id="live-text" data-mode="{{ selected_mode }}" data-receiver="{{ selected_receiver }}" data-paused="{% if paused %}true{% else %}false{% endif %}">
+  <thead><tr><th colspan="5">Live Channel Text</th></tr>
+  <tr><th>Receiver</th><th>RF (Hz)</th><th>Speed</th><th>SNR</th><th>Recent Text</th></tr></thead>
+  <tbody>{% for row in live_rows %}<tr>{% for cell in row %}<td class="mono">{{ cell }}</td>{% endfor %}</tr>{% endfor %}
+  {% if live_empty %}<tr><td colspan="5">No channels are decoding text.</td></tr>{% endif %}</tbody>
+</table>
+</div>
+{% endif %}
 <table class="cfg-table">
   <tr><th colspan="{{ length(columns) }}">{{ table_title }}</th></tr>
   <tr>{% for label in columns %}<th>{{ label }}</th>{% endfor %}</tr>

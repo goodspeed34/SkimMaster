@@ -14,6 +14,9 @@ ABIs are versioned separately by their exported symbol names.
   threshold; FT8/FT4 search range, candidates, sync score and LDPC
   iterations; WSPR passes and subtraction. Changes restart only the receiver
   workers that use the mode.
+- Live channel text on the CW and RTTY pages, published by receiver workers
+  to a transient `live_text` table (schema version 3) and polled every two
+  seconds.
 - Panel restore of an uploaded snapshot, a redacted diagnostics bundle and a
   confirmed factory reset. Each change is staged and applied by an in-process
   station restart that keeps a snapshot of the previous data.

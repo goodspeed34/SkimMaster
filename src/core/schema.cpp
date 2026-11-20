@@ -84,7 +84,22 @@ ALTER TABLE station_runtime ADD COLUMN exec_generation INTEGER NOT NULL
   DEFAULT 0;
 )sql";
 
-constexpr const char* kSteps[] = {kVersion1, kVersion2};
+// Version 3: the text each CW and RTTY channel is decoding, replaced by the
+// receiver worker about once a second.
+constexpr char kVersion3[] = R"sql(
+CREATE TABLE IF NOT EXISTS live_text(
+  slice_id TEXT NOT NULL,
+  receiver TEXT NOT NULL,
+  mode TEXT NOT NULL,
+  frequency_hz INTEGER NOT NULL,
+  text TEXT NOT NULL,
+  snr REAL,
+  speed REAL,
+  updated_ms INTEGER NOT NULL,
+  PRIMARY KEY(slice_id, frequency_hz));
+)sql";
+
+constexpr const char* kSteps[] = {kVersion1, kVersion2, kVersion3};
 static_assert(sizeof(kSteps) / sizeof(kSteps[0]) == kStationSchemaVersion,
               "one migration step per schema version");
 }  // namespace

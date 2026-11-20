@@ -82,6 +82,11 @@ class SmRtty {
       return;
     }
     char c = (figures_ ? figures : letters)[code_];
+    if (c >= 32 && c <= 126)
+      Append(c);
+    else if ((c == '\n' || c == '\r') && !recent_.empty() &&
+             recent_.back() != ' ')
+      Append(' ');
     if (c == '\n' || c == '\r' || line_.size() >= 256) {
       if (!line_.empty()) emit(line_);
       line_.clear();
@@ -98,6 +103,16 @@ class SmRtty {
   // A half bit of each tone for the sliding correlator.
   std::array<std::vector<std::complex<double>>, 2> history_;
   std::string line_;
+  std::string recent_;
+
+  void Append(char c) {
+    recent_ += c;
+    if (recent_.size() > kTextTail)
+      recent_.erase(0, recent_.size() - kTextTail);
+  }
+
+ public:
+  const std::string& recent() const { return recent_; }
 };
 
 // Accumulate energy in mark/space pairs over several symbols before opening a
@@ -188,6 +203,13 @@ class SmRttyBank {
     }
     power_.fill(0);
   }
+  std::vector<SmTextChannel> Snapshot() const {
+    std::vector<SmTextChannel> result;
+    for (const auto& [hz, channel] : channels_)
+      if (!channel.recent().empty())
+        result.push_back({hz, channel.recent(), {}, options_.baud});
+    return result;
+  }
 
  private:
   static constexpr int kBins = 2048;
@@ -258,6 +280,31 @@ class SmMorse {
     }
     last_ = std::move(next);
   }
+  std::vector<SmTextChannel> Snapshot() const {
+    std::vector<SmTextChannel> result;
+    auto active = md_get_channel_count(decoder_.get());
+    for (size_t i = 0; i < active; ++i) {
+      morsedec_channel channel{};
+      if (!md_get_channel(decoder_.get(), i, &channel)) continue;
+      const morsedec_character* chars = nullptr;
+      size_t n = 0;
+      if (!md_get_characters(decoder_.get(), channel.id, &chars, &n) || !n)
+        continue;
+      std::string text;
+      for (size_t j = 0; j < n; ++j) {
+        const auto c = chars[j].character;
+        if (c >= 32 && c < 127) text += static_cast<char>(c);
+        if (chars[j].word_end && !text.empty() && text.back() != ' ')
+          text += ' ';
+      }
+      while (!text.empty() && text.back() == ' ') text.pop_back();
+      if (text.size() > kTextTail) text.erase(0, text.size() - kTextTail);
+      if (!text.empty())
+        result.push_back({std::llround(channel.frequency), std::move(text),
+                          channel.snr, channel.wpm});
+    }
+    return result;
+  }
 
  private:
   std::unique_ptr<morsedec_decoder_t, decltype(&md_delete)> decoder_{nullptr,
@@ -312,8 +359,11 @@ const std::vector<SmSetting>& TextDecoderSettings(bool cw) {
 }
 
 void DecodeText(bool cw, const SmSettingValues& options, const IqStream& stream,
-                const TextSpot& on_spot, const std::function<void()>& gap) {
+                const TextSpot& on_spot, const std::function<void()>& gap,
+                const TextChannels& on_channels) {
   uint64_t index = 0;
+  const uint64_t interval = cw ? 48000 : kRttyRate;
+  uint64_t next_snapshot = interval;
   std::unique_ptr<SmMorse> morse;
   if (cw) morse = std::make_unique<SmMorse>(options);
   std::unique_ptr<SmRttyBank> rtty;
@@ -347,6 +397,10 @@ void DecodeText(bool cw, const SmSettingValues& options, const IqStream& stream,
               if (identified) emit(line, mark, match[1].str(), {}, baud);
             });
           }
+        if (on_channels && index >= next_snapshot) {
+          next_snapshot = index + interval;
+          on_channels(cw ? morse->Snapshot() : rtty->Snapshot(), index);
+        }
       },
       [&] {
         if (cw)
@@ -355,6 +409,9 @@ void DecodeText(bool cw, const SmSettingValues& options, const IqStream& stream,
           rtty->Reset();
         gap();
         index = 0;
+        next_snapshot = interval;
+        // Decoder state restarts, so clear the channels already shown.
+        if (on_channels) on_channels({}, 0);
       });
 }
 }  // namespace skim

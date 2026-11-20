@@ -94,6 +94,8 @@ help_overrides = {
     "cw-skimmer": (
         "<p><b>CW allocations:</b> Lists active CW slices and links to the structured receiver "
         "editor for slice changes.</p>"
+        "<p><b>Live channel text:</b> Shows the recent characters of every CW channel the "
+        "decoder is tracking, refreshed every two seconds unless refresh is paused.</p>"
         "<p><b>Decoder settings:</b> Sets the CW search range, channel count and starting "
         "speed for every CW slice without its own settings table. Saving restarts the "
         "receivers that use CW.</p>"
@@ -103,6 +105,8 @@ help_overrides = {
     "rtty-skimmer": (
         "<p><b>RTTY allocations:</b> Lists active RTTY slices and links to the structured "
         "receiver editor for slice changes.</p>"
+        "<p><b>Live channel text:</b> Shows the recent characters of every RTTY channel, "
+        "refreshed every two seconds unless refresh is paused.</p>"
         "<p><b>Decoder settings:</b> Sets shift, baud rate, tone reversal, channel count and "
         "detection threshold. Saving restarts the receivers that use RTTY.</p>"
         "<p><b>Recent results:</b> Shows up to 200 stored RTTY decoder results, newest first. "

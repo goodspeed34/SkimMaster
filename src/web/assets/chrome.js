@@ -50,4 +50,40 @@
     }
     tick();
     window.setInterval(tick, 1000);
+
+    // CW and RTTY pages: refresh the live channel text every two seconds.
+    const liveText = document.getElementById("live-text");
+    if (liveText && liveText.dataset.paused !== "true") {
+        const body = liveText.tBodies[0];
+        const columns = liveText.rows[1].cells.length;
+        async function refreshLiveText() {
+            try {
+                const query = new URLSearchParams({mode: liveText.dataset.mode,
+                                                   receiver: liveText.dataset.receiver});
+                const response = await fetch("/data/live-text?" + query, {cache: "no-store"});
+                if (!response.ok) return;
+                const rows = await response.json();
+                const lines = rows.map(row => {
+                    const line = document.createElement("tr");
+                    for (const value of row) {
+                        const cell = document.createElement("td");
+                        cell.className = "mono";
+                        cell.textContent = value;
+                        line.append(cell);
+                    }
+                    return line;
+                });
+                if (!lines.length) {
+                    const line = document.createElement("tr");
+                    const cell = document.createElement("td");
+                    cell.colSpan = columns;
+                    cell.textContent = "No channels are decoding text.";
+                    line.append(cell);
+                    lines.push(line);
+                }
+                body.replaceChildren(...lines);
+            } catch {}
+        }
+        setInterval(refreshLiveText, 2000);
+    }
 })();

@@ -87,6 +87,8 @@ settings = { max_channels = 8 }
 
 Unknown keys and out-of-range values are rejected when the TOML is saved.
 
+The CW and RTTY pages also show **Live Channel Text**: the last 160 characters each tracked channel has decoded, with its RF, speed and SNR. Receiver workers replace this text about once a second in the transient `live_text` table and remove it when they stop. The page polls it every two seconds unless refresh is paused.
+
 A receiver with a top-level `slices` array reserves its tuning for manual allocation. **Band Schedules** adds, edits, duplicates and deletes schedules. It also runs a schedule immediately for 30 minutes with **Run Now**. **Clear Override** restores normal allocation immediately. Automatic schedules can run on receivers that have no manual allocation. Each schedule has `start_minute`, `end_minute`, `priority` and `center_hz`, with optional `name`, `enabled`, `days` and `slices` fields. Minutes count from UTC midnight. Equal start and end cover the full day. An overnight window continues into the day after its start. The `days` mask uses bit 0 for Monday through bit 6 for Sunday and defaults to all seven days. Schedules are enabled by default. Lower priority numbers win, with ties resolved by list order.
 
 ## Manage IQ sources

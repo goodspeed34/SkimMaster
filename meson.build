@@ -89,6 +89,7 @@ sources = files(
   'src/receiver/receiver.cpp',
   'src/report/cluster.cpp',
   'src/report/reporting.cpp',
+  'src/store/live_text.cpp',
   'src/store/store.cpp',
   'src/store/workers.cpp',
   'src/web/admin.cpp',

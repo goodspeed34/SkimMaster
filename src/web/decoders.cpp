@@ -87,6 +87,20 @@ void AddDecoderSettings(const std::string& slug,
 }
 
 void RegisterDecoderRoutes(httplib::Server& server, SmWebContext& ctx) {
+  server.Get("/data/live-text", [&](const httplib::Request& req,
+                                    httplib::Response& res) {
+    const auto mode = req.get_param_value("mode");
+    if (mode != "CW" && mode != "RTTY") {
+      res.status = 400;
+      res.set_content("select CW or RTTY", "text/plain; charset=utf-8");
+      return;
+    }
+    res.set_header("Cache-Control", "no-store");
+    res.set_content(Query(ctx.database, kLiveTextSql,
+                          {mode, req.get_param_value("receiver")}, false)
+                        .dump(),
+                    "application/json");
+  });
   server.Post("/decoder-settings", [&](const httplib::Request& req,
                                        httplib::Response& res) {
     if (!ctx.ValidateForm(req, res)) return;

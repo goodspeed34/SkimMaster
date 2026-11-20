@@ -133,6 +133,14 @@ const char kSliceFrequencySql[] =
     "coalesce(json_extract(s.value,'$.center_hz'),"
     "json_extract(s.value,'$.dial_hz'),json_extract(w.plan,'$.center_hz')) "
     "ELSE json_extract(s.value,'$.dial_hz') END";
+const char kLiveTextSql[] =
+    "SELECT receiver,frequency_hz,CASE WHEN speed IS NULL THEN '' WHEN "
+    "mode='CW' THEN printf('%.0f WPM',speed) ELSE printf('%g Bd',speed) END,"
+    "CASE WHEN snr IS NULL THEN '' ELSE printf('%.1f dB',snr) END,text "
+    "FROM live_text WHERE mode=?1 AND (?2='' OR receiver=?2) AND "
+    "updated_ms>CAST(strftime('%s','now') AS INTEGER)*1000-60000 "
+    "ORDER BY receiver,frequency_hz LIMIT 64";
+
 const char kWorkerUsageSql[] =
     "CASE WHEN w.cpu_percent IS NULL AND w.rss_bytes IS NULL THEN '—' ELSE "
     "coalesce(printf('%.1f%%',w.cpu_percent),'—')||' · '||"

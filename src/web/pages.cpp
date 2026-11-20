@@ -132,6 +132,12 @@ void RenderDecoderPage(SmWebContext& ctx, const std::string& slug,
   model["recent_rows"] = Query(ctx.database, recent_sql.c_str(),
                                {receiver, selected_mode}, !export_csv);
   model["recent_empty"] = model["recent_rows"].empty();
+  model["live_text"] = !digital;
+  if (!digital) {
+    model["live_rows"] =
+        Query(ctx.database, kLiveTextSql, {selected_mode, receiver});
+    model["live_empty"] = model["live_rows"].empty();
+  }
   if (export_csv) {
     res.set_header("Content-Disposition",
                    "attachment; filename=" + slug + ".csv");

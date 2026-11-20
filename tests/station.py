@@ -90,7 +90,7 @@ center_hz = 14080000
             with closing(sqlite3.connect(database)) as db, db:
                 columns = {row[1] for row in db.execute("PRAGMA table_info(workers)")}
                 assert {"kind", "state", "pid", "restarts"} <= columns, columns
-                assert db.execute("PRAGMA user_version").fetchone() == (2,)
+                assert db.execute("PRAGMA user_version").fetchone() == (3,)
                 assert db.execute(
                     "SELECT count(*) FROM workers WHERE id='stale'"
                 ).fetchone() == (0,)

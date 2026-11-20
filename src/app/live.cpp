@@ -14,6 +14,7 @@
 #include "decoder/slot.h"
 #include "decoder/sstv.h"
 #include "decoder/text_modes.h"
+#include "store/live_text.h"
 #include "store/store.h"
 
 namespace skim {
@@ -25,9 +26,11 @@ int64_t UtcMilliseconds() {
 }
 
 void ReceiveText(const std::string& mode, const SmSettingValues& options,
-                 const char* device, int64_t center, const char* receiver,
-                 const char* database, int64_t first_ms, const IqReader& read) {
+                 const std::string& slice_id, const char* device,
+                 int64_t center, const char* receiver, const char* database,
+                 int64_t first_ms, const IqReader& read) {
   const bool cw = mode == "CW";
+  SmLiveTextWriter live_text(database, slice_id, receiver, mode);
   const int rate = cw ? 48000 : 12000;
   const bool live = !IsReplayReceiver(device);
   if (!live && first_ms < 0) first_ms = 0;
@@ -55,7 +58,13 @@ void ReceiveText(const std::string& mode, const SmSettingValues& options,
         SaveSlot(database, receiver, mode.c_str(), utc, {spot}, live);
         std::cout << spot.frequency << ' ' << spot.message << std::endl;
       },
-      [] {});
+      [] {},
+      [&](std::vector<SmTextChannel> channels, uint64_t) {
+        // Wall-clock time, so the panel can tell fresh text from stale rows
+        // left by a stopped worker even during replay.
+        for (auto& channel : channels) channel.frequency += center;
+        live_text.Replace(UtcMilliseconds(), channels);
+      });
 }
 
 std::shared_ptr<const SmSlice> StandaloneSlice(const std::string& mode,
@@ -103,8 +112,8 @@ void ReceiveSlice(const SmSlice& slice, int64_t dial, const char* database,
   const auto* device = receiver.device().c_str();
   const auto* mode = ModeName(slice.mode());
   if (slice.mode() == SmMode::Cw || slice.mode() == SmMode::Rtty)
-    return ReceiveText(mode, slice.decoder().options(), device, dial,
-                       receiver.id().c_str(), database, first_ms, read);
+    return ReceiveText(mode, slice.decoder().options(), slice.id(), device,
+                       dial, receiver.id().c_str(), database, first_ms, read);
 
   const auto* slot_decoder = slice.decoder().slot_decoder();
   if (!slot_decoder) throw std::runtime_error("expected a slot decoder");

@@ -30,6 +30,9 @@ constexpr int64_t kMaxIndex = 1024 * 1024;
 // SQL for the RF reference of slice s on worker w, given json_each over the
 // worker plan's slices: the slice center for CW and RTTY, else the dial.
 extern const char kSliceFrequencySql[];
+// SQL for the live CW or RTTY channel text of mode ?1 and receiver ?2 (empty
+// for all), updated within the last minute.
+extern const char kLiveTextSql[];
 // SQL formatting a worker row's CPU and memory, or an em dash.
 extern const char kWorkerUsageSql[];
 

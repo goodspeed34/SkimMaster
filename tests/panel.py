@@ -231,6 +231,31 @@ with tempfile.TemporaryDirectory() as directory:
             assert mode + b" Decoder Settings" in digital_page
         assert b'name="ldpc_iterations"' in digital_page
         assert b'name="passes"' in digital_page
+        assert b"Live Channel Text" in rtty_page
+        assert b"Live Channel Text" not in digital_page
+        assert json.loads(get("/data/live-text?mode=CW")) == []
+        now_ms = int(time.time() * 1000)
+        with closing(sqlite3.connect(db)) as connection, connection:
+            connection.executemany(
+                "INSERT INTO live_text VALUES(?,?,?,?,?,?,?,?)",
+                [("s1", "hf", "CW", 7030500, "CQ CQ DE K1<b>X", 12.5, 24.0,
+                  now_ms),
+                 ("s1", "hf", "CW", 7031000, "stale", None, None,
+                  now_ms - 120000)])
+        live = json.loads(get("/data/live-text?mode=CW&receiver=hf"))
+        assert live == [["hf", "7030500", "24 WPM", "12.5 dB",
+                         "CQ CQ DE K1<b>X"]], live
+        assert json.loads(get("/data/live-text?mode=CW&receiver=other")) == []
+        cw_page = get("/cw-skimmer")
+        assert b"CQ CQ DE K1&lt;b&gt;X" in cw_page and b"stale" not in cw_page
+        assert b'data-mode="CW"' in cw_page
+        try:
+            get("/data/live-text?mode=FT8")
+            raise AssertionError("live text accepted a slot mode")
+        except HTTPError as error:
+            assert error.code == 400
+        with closing(sqlite3.connect(db)) as connection, connection:
+            connection.execute("DELETE FROM live_text")
         rtty_form = {**form("/rtty-skimmer"), "mode": "RTTY",
                      "shift_hz": "850", "baud": "45.45", "reverse": "on",
                      "max_channels": "16", "threshold": "24"}
