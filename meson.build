@@ -147,6 +147,7 @@ test('station lifecycle', find_program('python3'), args : [files('tests/station.
 test('snapshot restore', find_program('python3'), args : [files('tests/backup.py'), exe,
   meson.project_source_root() / 'subprojects/ft8_lib/test/wav/191111_110130.wav'])
 test('multichannel CW frontend', find_program('python3'), args : [files('tests/cw.py'), exe])
+test('TCI receiver', find_program('python3'), args : [files('tests/tci.py'), exe])
 test('WAV IQ receiver', find_program('python3'), args : [files('tests/wav_receiver.py'), exe, server,
   meson.project_source_root() / 'subprojects/ft8_lib/test/wav/191111_110130.wav'])
 

@@ -8,6 +8,10 @@ ABIs are versioned separately by their exported symbol names.
 
 ### Added
 
+- TCI receiver module (`tci:host:port/N`) for ExpertSDR, SunSDR and other TCI
+  servers: probe lists each receiver, capture sets the IQ rate and DDS center
+  and streams 16/24/32-bit integer or float IQ. DDS changes from other
+  clients hold IQ until the receiver is back on plan.
 - Per-mode decoder settings in `[decoders.<MODE>]` and per-slice `settings`
   tables, edited from the CW, RTTY and digital decoder pages: CW search range,
   channels and initial speed; RTTY shift, baud, reverse, channels and

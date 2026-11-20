@@ -17,6 +17,7 @@ from urllib.error import HTTPError
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 from process_control import popen, stop
+from tci_emulator import TciServer
 
 with tempfile.TemporaryDirectory() as directory:
     server = Path(sys.argv[2]).resolve()
@@ -453,6 +454,16 @@ with tempfile.TemporaryDirectory() as directory:
             listener.join(5)
             assert commands == [struct.pack(">BIBIBIBIBi", 2, 48000, 1, 7050000,
                                             3, 1, 4, 123, 5, -4)]
+
+        tci = TciServer()
+        listener = threading.Thread(target=lambda: (tci.accept(), tci.close()))
+        listener.start()
+        found = json.loads(post("/receiver-probe", {**add, "driver": "tci",
+                                                    "target": f"127.0.0.1:{tci.port}"}))
+        listener.join(5)
+        assert [(f["device"], f["label"]) for f in found] == [
+            (f"tci:127.0.0.1:{tci.port}/{rx}", f"SunSDR2PRO receiver {rx} (TCI)")
+            for rx in range(2)], found
 
         receiver = {"action": "save", "receiver": "Desk & IQ", "device": "wav:short IQ.wav",
                     "rate": "48000", "enabled": "on", "center_hz": "7050000",

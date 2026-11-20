@@ -103,8 +103,11 @@ In the receiver editor or setup wizard, select the driver and click **Scan**. A 
 |---|---|---|
 | SoapySDR | Leave blank to enumerate, or supply a SoapySDR argument filter | `driver=airspyhf` |
 | RTL-TCP | Enter `host:port` to check its RTL-TCP handshake. A blank target checks `127.0.0.1:1234`. | `rtltcp:192.168.1.20:1234` |
+| TCI | Enter `host[:port]` of a TCI server such as ExpertSDR. The default port is 40001. A blank target checks `127.0.0.1:40001`. Each transceiver receiver is listed separately. | `tci:192.168.1.30:40001/0` |
 | PortAudio | Leave blank to list stereo inputs, or filter by device name or index | `portaudio:2` or `portaudio:default` |
 | IQ WAV | Enter a server-side file or directory. A blank target scans the TOML directory. | `wav:recordings/20m.wav` |
+
+TCI capture sets the server's IQ rate (48000, 96000, 192000 or 384000 Hz) and the receiver's DDS center, then streams that receiver's IQ. Set gain and calibration in the radio software. TCI servers share one DDS per receiver with every connected client. If another client retunes it, Skim Master logs the change and holds that receiver's IQ until the DDS returns to the configured center.
 
 PortAudio device indices can change as audio devices are added or removed. Rescan if the configured index no longer selects the intended stereo input. When upgrading an ALSA configuration, replace any `alsa:` selectors with a scanned PortAudio input. If reusing an install directory, remove the former bundled `librcvralsa` module before restarting.
 
