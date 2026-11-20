@@ -150,7 +150,7 @@ test('snapshot restore', find_program('python3'), args : [files('tests/backup.py
   meson.project_source_root() / 'subprojects/ft8_lib/test/wav/191111_110130.wav'])
 test('multichannel CW frontend', find_program('python3'), args : [files('tests/cw.py'), exe])
 test('TCI receiver', find_program('python3'), args : [files('tests/tci.py'), exe])
-test('FlexRadio receiver', find_program('python3'), args : [files('tests/flex.py'), exe])
+test('FlexRadio receiver', find_program('python3'), args : [files('tests/flex.py'), exe], timeout : 90)
 test('SoapySDR receiver', find_program('python3'), args : [files('tests/soapy.py'), exe],
   env : soapy_fake_env, depends : soapy_fake)
 test('WAV IQ receiver', find_program('python3'), args : [files('tests/wav_receiver.py'), exe, server,

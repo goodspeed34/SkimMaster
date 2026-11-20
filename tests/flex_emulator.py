@@ -54,7 +54,10 @@ class FlexRadio:
                 line, buffer = buffer.split(b"\n", 1)
                 sequence, command = line.decode().strip()[1:].split("|", 1)
                 self.commands.append(command)
-                self.answer(sequence, command)
+                try:
+                    self.answer(sequence, command)
+                except OSError:
+                    return  # the client hung up while cleaning up
 
     def answer(self, sequence, command):
         words = command.split()

@@ -14,7 +14,9 @@ from flex_emulator import FlexRadio, PAN
 from morse_iq import RATE, keyed
 
 BLOCK = 256  # complex samples per datagram
-SPEEDUP = 6  # faster than real time, slow enough for loopback UDP
+# Faster than real time, but slower than the CW decoder under ThreadSanitizer
+# (about 4x), since UDP has no backpressure.
+SPEEDUP = 3
 
 radio = FlexRadio()
 errors = []
@@ -46,7 +48,7 @@ def stream_iq():
         decoy = keyed("CQ CQ DE W2DCY W2DCY TEST " * 2, 700)
         paced([(radio.streams[2], wanted), (0x20000001, decoy)])
         radio.status(f"display pan {PAN} center=7.050000")
-        paced([(radio.streams[2], keyed("CQ CQ DE W9OFF W9OFF TEST " * 2, 700))])
+        paced([(radio.streams[2], keyed("CQ CQ DE W9OFF W9OFF TEST", 700))])
         time.sleep(.5)
     except Exception as error:
         errors.append(error)
@@ -64,8 +66,7 @@ with tempfile.TemporaryDirectory() as tmp:
                           db, "0"], capture_output=True, text=True, timeout=120)
     streamer.join(10)
     radio.close()
-    assert not errors, errors
-    assert run.returncode == 0, run.stderr
+    assert not errors and run.returncode == 0, (errors, run.returncode, run.stderr)
     sent = radio.commands
     assert sent[:5] == [
         f"client udpport {radio.udp_port}", "display panafall create x=100 y=100",

@@ -8,16 +8,21 @@
 #include <chrono>
 #include <cmath>
 #include <complex>
+#include <condition_variable>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
+#include <deque>
+#include <exception>
 #include <functional>
 #include <map>
+#include <mutex>
 #include <optional>
 #include <set>
 #include <sstream>
 #include <stdexcept>
 #include <string>
+#include <thread>
 #include <vector>
 
 #include "receiver/plugin_api.h"
@@ -273,6 +278,62 @@ std::map<std::string, std::string> Discover() {
   return radios;
 }
 
+// IQ blocks handed from the UDP reader thread to the capture thread. When
+// the consumer falls more than `capacity` samples behind, new blocks are
+// dropped and the next delivered block carries a gap.
+class SmIqBuffer {
+ public:
+  struct SmBlock {
+    std::vector<std::complex<float>> iq;
+    bool gap = false;
+  };
+
+  explicit SmIqBuffer(size_t capacity) : capacity_(capacity) {}
+
+  void Push(std::vector<std::complex<float>> iq, bool gap) {
+    {
+      std::lock_guard<std::mutex> lock(mutex_);
+      if (samples_ + iq.size() > capacity_) {
+        overflowed_ = true;
+        return;
+      }
+      samples_ += iq.size();
+      blocks_.push_back({std::move(iq), gap || overflowed_});
+      overflowed_ = false;
+    }
+    ready_.notify_one();
+  }
+
+  // Ends the stream because the reader failed; Pop rethrows the error.
+  void Fail(std::exception_ptr error) {
+    {
+      std::lock_guard<std::mutex> lock(mutex_);
+      error_ = std::move(error);
+    }
+    ready_.notify_all();
+  }
+
+  bool Pop(SmBlock& block, std::chrono::milliseconds wait) {
+    std::unique_lock<std::mutex> lock(mutex_);
+    ready_.wait_for(lock, wait, [&] { return !blocks_.empty() || error_; });
+    if (error_) std::rethrow_exception(error_);
+    if (blocks_.empty()) return false;
+    block = std::move(blocks_.front());
+    blocks_.pop_front();
+    samples_ -= block.iq.size();
+    return true;
+  }
+
+ private:
+  const size_t capacity_;
+  std::mutex mutex_;
+  std::condition_variable ready_;
+  std::deque<SmBlock> blocks_;
+  size_t samples_ = 0;
+  bool overflowed_ = false;
+  std::exception_ptr error_;
+};
+
 class SmFlexReceiverPlugin final : public SmReceiverPlugin {
  public:
   const SmReceiverPluginMetadata& metadata() const noexcept override {
@@ -311,7 +372,10 @@ class SmFlexReceiverPlugin final : public SmReceiverPlugin {
     SmFlexConnection connection(address);
     auto& io = connection.io();
 
-    Udp::socket udp(io, Udp::endpoint(Udp::v4(), 0));
+    // DAX IQ is read on its own thread so a slow decoder cannot overflow
+    // the kernel's UDP buffer, which holds well under a second of IQ.
+    boost::asio::io_context udp_io;
+    Udp::socket udp(udp_io, Udp::endpoint(Udp::v4(), 0));
     udp.set_option(boost::asio::socket_base::receive_buffer_size(8 << 20));
     connection.Command("client udpport " +
                        std::to_string(udp.local_endpoint().port()));
@@ -406,18 +470,18 @@ class SmFlexReceiverPlugin final : public SmReceiverPlugin {
             read_status();
           });
     };
+    SmIqBuffer buffer(2 * static_cast<size_t>(request.rate));
     std::array<uint8_t, 65536> packet;
-    std::vector<std::complex<float>> iq;
     int expected_count = -1;
     // Payloads are big-endian float32 I/Q pairs. The 4-bit packet count
-    // reveals dropped datagrams.
-    auto deliver = [&](size_t size) {
+    // reveals datagrams lost on the network.
+    auto receive = [&](size_t size) {
       SmVitaPacket vita;
       if (!ParseVita(packet.data(), size, vita) || vita.stream != *stream)
         return;
-      if (expected_count >= 0 && vita.count != expected_count) sink.gap();
+      const bool lost = expected_count >= 0 && vita.count != expected_count;
       expected_count = (vita.count + 1) & 0xf;
-      iq.resize(vita.payload_bytes / 8);
+      std::vector<std::complex<float>> iq(vita.payload_bytes / 8);
       for (size_t i = 0; i < iq.size(); ++i) {
         float values[2];
         for (int j = 0; j < 2; ++j) {
@@ -426,27 +490,57 @@ class SmFlexReceiverPlugin final : public SmReceiverPlugin {
         }
         iq[i] = {values[0], values[1]};
       }
-      if (!iq.empty()) sink.samples(iq.data(), iq.size());
+      buffer.Push(std::move(iq), lost);
     };
     std::function<void()> read_iq = [&] {
       udp.async_receive(boost::asio::buffer(packet),
                         [&](boost::system::error_code error, size_t size) {
                           if (error == boost::asio::error::operation_aborted)
                             return;
-                          if (!error) deliver(size);
+                          if (!error) receive(size);
                           read_iq();
                         });
     };
-    read_status();
     read_iq();
-    io.restart();
-    while (!finished) io.run();
+    std::thread reader([&] {
+      try {
+        udp_io.run();
+      } catch (...) {
+        buffer.Fail(std::current_exception());
+      }
+    });
+    struct SmJoin {
+      boost::asio::io_context& io;
+      std::thread& thread;
+      ~SmJoin() {
+        io.stop();
+        if (thread.joinable()) thread.join();
+      }
+    } join{udp_io, reader};
+
+    auto deliver = [&](SmIqBuffer::SmBlock& block) {
+      if (block.gap) sink.gap();
+      if (!block.iq.empty()) sink.samples(block.iq.data(), block.iq.size());
+    };
+    read_status();
+    SmIqBuffer::SmBlock block;
+    while (!finished) {
+      io.restart();
+      io.poll();
+      if (finished) break;
+      if (buffer.Pop(block, std::chrono::milliseconds(20))) deliver(block);
+    }
     // Deliver IQ that arrived before the control connection closed.
+    udp_io.stop();
+    reader.join();
+    udp.cancel();
+    while (buffer.Pop(block, std::chrono::milliseconds(0))) deliver(block);
     boost::system::error_code drained;
     while (udp.available(drained) && !drained) {
       const auto size = udp.receive(boost::asio::buffer(packet), 0, drained);
-      if (!drained) deliver(size);
+      if (!drained) receive(size);
     }
+    while (buffer.Pop(block, std::chrono::milliseconds(0))) deliver(block);
   }
 };
 }  // namespace
