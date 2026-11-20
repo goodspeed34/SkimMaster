@@ -493,6 +493,11 @@ with tempfile.TemporaryDirectory() as directory:
         assert found and found[0]["device"] == f"flex:127.0.0.1:{flex.port}/1", found
         assert found[0]["label"] == "FLEX-6600 Shack DAX IQ 1", found
 
+        found = json.loads(post("/receiver-probe", {**add, "driver": "soapy",
+                                                    "target": "driver=fake"}))
+        assert [f["label"] for f in found] == ["Fake SDR"], found
+        assert "driver=fake" in found[0]["device"] and "serial=F00D" in found[0]["device"], found
+
         receiver = {"action": "save", "receiver": "Desk & IQ", "device": "wav:short IQ.wav",
                     "rate": "48000", "enabled": "on", "center_hz": "7050000",
                     "mode": "CW", "repeat": "on"}

@@ -97,7 +97,8 @@ std::string DescribeState(const SmReceiverState& state) {
 
 std::string StateMismatch(const SmReceiverCaptureRequest& request,
                           const SmReceiverState& state) {
-  if (state.center_hz && *state.center_hz != request.center_hz)
+  if (state.center_hz &&
+      std::abs(*state.center_hz - request.center_hz) > kCenterToleranceHz)
     return "the center returns to " + std::to_string(request.center_hz) + " Hz";
   if (state.rate && *state.rate != request.rate)
     return "the rate returns to " + std::to_string(request.rate) + " Hz";

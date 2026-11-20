@@ -125,6 +125,7 @@ instance_test = executable('instance-test', 'tests/instance.cpp',
 test('typed instance graph', instance_test)
 unit_test = executable('unit-test', 'tests/unit.cpp', dependencies : station_dep)
 test('unit', unit_test)
+subdir('tests/soapy')
 
 test('replay', find_program('python3'), args : [files('tests/replay.py'), exe])
 
@@ -136,7 +137,8 @@ endforeach
 test('WSPR slot', find_program('python3'), args : [files('tests/wspr.py'), exe,
   meson.project_source_root() / 'subprojects/wspr/signals/refSignalSnr0dB.iq'])
 test('local control panel', find_program('python3'), args : [files('tests/panel.py'), exe, server,
-  meson.project_source_root() / 'subprojects/ft8_lib/test/wav/191111_110130.wav'])
+  meson.project_source_root() / 'subprojects/ft8_lib/test/wav/191111_110130.wav'],
+  env : soapy_fake_env, depends : soapy_fake)
 test('RTTY stream', find_program('python3'), args : [files('tests/text_modes.py'), exe])
 test('reporting protocols', find_program('python3'), args : [files('tests/reporting.py'), exe,
   meson.project_source_root() / 'subprojects/ft8_lib/test/wav/191111_110130.wav'])
@@ -149,6 +151,8 @@ test('snapshot restore', find_program('python3'), args : [files('tests/backup.py
 test('multichannel CW frontend', find_program('python3'), args : [files('tests/cw.py'), exe])
 test('TCI receiver', find_program('python3'), args : [files('tests/tci.py'), exe])
 test('FlexRadio receiver', find_program('python3'), args : [files('tests/flex.py'), exe])
+test('SoapySDR receiver', find_program('python3'), args : [files('tests/soapy.py'), exe],
+  env : soapy_fake_env, depends : soapy_fake)
 test('WAV IQ receiver', find_program('python3'), args : [files('tests/wav_receiver.py'), exe, server,
   meson.project_source_root() / 'subprojects/ft8_lib/test/wav/191111_110130.wav'])
 

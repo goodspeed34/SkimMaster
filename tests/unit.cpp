@@ -516,6 +516,8 @@ void TestReceiverState() {
          "an empty report matches any request");
   Expect(skim::StateMismatch(request, {14074000, 192000, 30.0}).empty(),
          "gain differences do not hold IQ");
+  Expect(skim::StateMismatch(request, {14074000 - 37, {}, {}}).empty(),
+         "synthesizer rounding stays within the center tolerance");
   ExpectEqual<std::string>(skim::StateMismatch(request, {7074000, {}, {}}),
                            "the center returns to 14074000 Hz",
                            "a retuned center holds IQ");

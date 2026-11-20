@@ -8,6 +8,9 @@ ABIs are versioned separately by their exported symbol names.
 
 ### Added
 
+- SoapySDR coverage in CI through a fake SoapySDR module loaded from
+  `SOAPY_SDR_PLUGIN_PATH`: probe, capture, synthesizer rounding and an
+  off-plan tuner.
 - FlexRadio receiver module (`flex:host[:port]/CHANNEL`): LAN discovery,
   per-radio DAX IQ channels 1–4, a dedicated panadapter per capture, VITA-49
   DAX IQ over UDP with loss detection, and an IQ hold when SmartSDR retunes
@@ -56,7 +59,8 @@ ABIs are versioned separately by their exported symbol names.
 - Receiver plugin ABI v3: `skim_receiver_v3` and `skim_receiver_descriptor_v3`
   replace the v2 symbols. `Capture` takes an `SmCaptureSink` whose `state`
   callback reports the applied center, rate and gain; the host logs it and
-  holds IQ while the device is off plan. Descriptors gain `reports_state`.
+  holds IQ while the device is off plan: a different rate, or a center more than
+  100 Hz away. Descriptors gain `reports_state`.
   SoapySDR reports its applied tuning. Rebuild external receivers.
 - Slot decoder plugin ABI v3: `skim_slot_decoder_v3` replaces
   `skim_slot_decoder_v2`. Metadata declares settings, and `start` and the

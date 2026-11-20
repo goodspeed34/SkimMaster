@@ -37,6 +37,10 @@ inline bool IsReplayReceiver(std::string_view device) {
 // directory.
 std::string ResolveReceiverDevice(std::string_view device,
                                   const std::filesystem::path& base);
+// Tuners with a coarse synthesizer read back a center a few hertz from the
+// request. Within this distance the IQ still feeds the planned slices.
+constexpr int64_t kCenterToleranceHz = 100;
+
 // Why a reported device state cannot feed the request's slices, phrased as
 // the condition to wait for, or empty when it matches.
 std::string StateMismatch(const SmReceiverCaptureRequest& request,
