@@ -4,7 +4,7 @@ Skim Master takes wideband IQ from one or more receivers, allocates decoder slic
 
 ## Build and validate
 
-Install Meson 1.3 or later, Ninja, Python 3.10 or later, a C++17 compiler, Boost with Boost.Process v2, NNG, FFTW3 single precision, SQLite, Inja with nlohmann/json, libsndfile, libpng, libzip, OpenSSL, and SoapySDR. Linux also uses ALSA. Meson can fetch the pinned libcsdr, libmorsedec, FT8/FT4, WSPR, toml++ and cpp-httplib sources when needed.
+Install Meson 1.3 or later, Ninja, Python 3.10 or later, a C++17 compiler, Boost with Boost.Process v2, NNG, FFTW3 single precision, SQLite, Inja with nlohmann/json, libsndfile, libpng, libzip, OpenSSL, SoapySDR, and PortAudio. Meson can fetch the pinned libcsdr, libmorsedec, FT8/FT4, WSPR, toml++ and cpp-httplib sources when needed.
 
 ```sh
 meson setup build
@@ -60,7 +60,7 @@ The server prints startup, listener and worker lifecycle messages to stderr. Ope
 
 The panel has no built-in login. Anyone who can reach the configured HTTP listener can change station settings or download a backup. The default listener is loopback. Legacy `user` and `password` keys are ignored and dropped when the configuration is next saved.
 
-Use a capture rate supported by the source. Skim Master resamples to the slice rate when the ratio is fractional. CW uses 48 kHz slices. The other modes use 12 kHz slices. Timed modes center their slice 1,500 Hz above the USB dial. The device string selects a SoapySDR driver, `rtltcp:host:port`, or `alsa:pcm-name` on Linux. The ALSA frontend assumes a stereo zero-IF IQ feed. The hardware sets its own RF tuning. SoapySDR and RTL-TCP accept optional `gain_db` and `ppm`. Linux checks the kernel clock state before decoding live timed slots. Windows uses SNTP with the server set by `SKIM_NTP_SERVER`, defaulting to `time.windows.com`.
+Use a capture rate supported by the source. Skim Master resamples to the slice rate when the ratio is fractional. CW uses 48 kHz slices. The other modes use 12 kHz slices. Timed modes center their slice 1,500 Hz above the USB dial. The device string selects a SoapySDR driver, `rtltcp:host:port`, or `portaudio:device-index`. PortAudio captures stereo zero-IF IQ with I on the left and Q on the right. Set RF tuning and gain on the hardware. SoapySDR and RTL-TCP accept optional `gain_db` and `ppm`. Linux checks the kernel clock state before decoding live timed slots. Windows uses SNTP with the server set by `SKIM_NTP_SERVER`, defaulting to `time.windows.com`.
 
 CW and RTTY search the configured slice for signals. By default, the slice inherits the IQ source's RF center. Use an optional `center_hz` inside the slice to offset it within the capture bandwidth. Existing CW and RTTY configurations with `dial_hz` use that value as the slice center when `center_hz` is omitted.
 
@@ -76,8 +76,10 @@ In the receiver editor or setup wizard, select the driver and click **Scan**. A 
 |---|---|---|
 | SoapySDR | Leave blank to enumerate, or supply a SoapySDR argument filter | `driver=airspyhf` |
 | RTL-TCP | Enter `host:port` to check its RTL-TCP handshake. A blank target checks `127.0.0.1:1234`. | `rtltcp:192.168.1.20:1234` |
-| ALSA (Linux) | Leave blank to list capture PCM entries, or filter by PCM name or description | `alsa:hw:1,0` |
+| PortAudio | Leave blank to list stereo inputs, or filter by device name or index | `portaudio:2` or `portaudio:default` |
 | IQ WAV | Enter a server-side file or directory. A blank target scans the TOML directory. | `wav:recordings/20m.wav` |
+
+PortAudio device indices can change as audio devices are added or removed. Rescan if the configured index no longer selects the intended stereo input. When upgrading an ALSA configuration, replace any `alsa:` selectors with a scanned PortAudio input. If reusing an install directory, remove the former bundled `librcvralsa` module before restarting.
 
 The SSTV Gallery lists the 100 newest images. Filter by mode and UTC date, download a CSV index of matching images, or delete an individual image. The timestamp and mode come from the image filename; Skim Master does not attach callsign or signal metadata to gallery files.
 

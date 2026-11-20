@@ -16,7 +16,7 @@ jobs:
             cmake \
             libboost-all-dev libnng-dev libfftw3-dev libsqlite3-dev inja-dev \
             nlohmann-json3-dev libsndfile1-dev libpng-dev libzip-dev libssl-dev \
-            libsoapysdr-dev libasound2-dev
+            libsoapysdr-dev portaudio19-dev
       - uses: actions/checkout@v4
       - name: Build, test and install
         run: |
@@ -42,7 +42,7 @@ jobs:
           pacboy: >-
             toolchain:p meson:p ninja:p pkgconf:p cmake:p boost:p nng:p fftw:p
             sqlite:p inja:p nlohmann-json:p libsndfile:p libpng:p libzip:p
-            openssl:p soapysdr:p python:p
+            openssl:p soapysdr:p portaudio:p python:p
       - name: Build, test and install
         run: |
           meson setup build --buildtype=release --force-fallback-for=csdr,morsedec --prefix="$(cygpath -m "$RUNNER_TEMP")/SkimMaster"

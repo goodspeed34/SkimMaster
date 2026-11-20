@@ -6,6 +6,4 @@ subdir('wspr')
 subdir('soapy')
 subdir('rtltcp')
 subdir('wav')
-if host_machine.system() == 'linux'
-  subdir('alsa')
-endif
+subdir('portaudio')

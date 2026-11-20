@@ -75,7 +75,7 @@
     <tr><th colspan="2">{% if original == "" %}Add Receiver{% else %}Edit Receiver{% endif %}</th></tr>
     <tr><td class="label-col"><label for="receiver">IQ Source Name</label></td><td><input id="receiver" name="receiver" value="{{ fields.receiver }}" required></td></tr>
     <tr><td class="label-col">Discovery</td><td><!-- receiver probe --></td></tr>
-    <tr><td class="label-col"><label for="device">Device Parameter</label></td><td><input id="device" name="device" size="42" value="{{ fields.device }}" required><br><span class="hint-inline">Select a discovered device or enter its parameter, such as <code>driver=airspyhf</code>, <code>rtltcp:host:1234</code>, <code>alsa:hw:1,0</code> or <code>wav:recording.wav</code>.</span></td></tr>
+    <tr><td class="label-col"><label for="device">Device Parameter</label></td><td><input id="device" name="device" size="42" value="{{ fields.device }}" required><br><span class="hint-inline">Select a discovered device or enter its parameter, such as <code>driver=airspyhf</code>, <code>rtltcp:host:1234</code>, <code>portaudio:2</code> or <code>wav:recording.wav</code>.</span></td></tr>
     <tr><td class="label-col"><label for="rate">Sample Rate (Hz)</label></td><td><input id="rate" name="rate" type="number" value="{{ fields.rate }}" min="12000" max="6144000" required></td></tr>
     <tr><td class="label-col"><label for="center_hz">RF Center (Hz)</label></td><td><input id="center_hz" name="center_hz" type="number" min="1" max="1000000000000" value="{{ fields.center_hz }}"></td></tr>
     <tr><td class="label-col">Enabled</td><td><label><input name="enabled" type="checkbox"{% if fields.enabled %} checked{% endif %}> Enable receiver</label></td></tr>

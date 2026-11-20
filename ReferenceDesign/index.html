@@ -186,7 +186,7 @@
           </tr>
           <tr>
             <td><b>RX-40m-ZeroIF</b></td>
-            <td>ALSA (hw:1,0 PCM1802)</td>
+            <td>PortAudio (PCM1802)</td>
             <td class="mono">7.050 MHz</td>
             <td class="mono">192 kHz</td>
             <td>3 Active</td>
@@ -512,7 +512,7 @@
         </div>
 
         <div class="page-help">
-          <p><b>Panadapter:</b> The FFT is computed per receiver from the raw IQ stream. Span is limited by the receiver sample bandwidth (912 kHz for the Airspy, 192 kHz for the ALSA front-end).</p>
+          <p><b>Panadapter:</b> The FFT is computed per receiver from the raw IQ stream. Span is limited by the receiver sample bandwidth (912 kHz for the Airspy, 192 kHz for the PortAudio front-end).</p>
           <p><b>FFT Size:</b> Larger transforms improve frequency resolution but reduce time resolution. 4096 bins is the default for mixed CW and digital work.</p>
           <p><b>Waterfall:</b> Colors map relative signal energy; the display is a static 60-second snapshot in this reference build.</p>
           <p><b>Top Signals:</b> Only carriers with a completed decoder assignment are listed. Use <i>Tune Receiver</i> to center the panadapter on the selected spot.</p>
@@ -1177,7 +1177,7 @@
             </tr>
             <tr>
               <td><b>RX-40m-ZeroIF</b></td>
-              <td>ALSA &mdash; hw:1,0 PCM1802</td>
+              <td>PortAudio &mdash; PCM1802</td>
               <td class="mono">7.050 MHz</td>
               <td class="mono">192 kSPS</td>
               <td class="mono">192 kHz</td>
@@ -1226,7 +1226,7 @@
             <td class="num mono">1,607,305,920</td>
             <td class="num mono">2</td>
             <td class="num mono">&mdash;</td>
-            <td class="small">ALSA xrun at 2026-11-16 02:14:07 (recovered)</td>
+            <td class="small">PortAudio input overflow at 2026-11-16 02:14:07 (recovered)</td>
           </tr>
           <tr>
             <td>RX-15m-Remote</td>
@@ -1293,7 +1293,7 @@
                 <select id="rxDriver">
                   <option selected>libairspyhf (Airspy HF+)</option>
                   <option>SoapySDR (generic)</option>
-                  <option>ALSA sound card (zero-IF)</option>
+                  <option>PortAudio sound card (zero-IF)</option>
                   <option>RTL-TCP / IQ network stream</option>
                   <option>FunCube Dongle Pro+</option>
                 </select>
@@ -1420,7 +1420,7 @@
           </tr>
           <tr>
             <td><b>RX-40m-ZeroIF</b></td>
-            <td>ALSA</td>
+            <td>PortAudio</td>
             <td class="mono">7.050 MHz</td>
             <td class="num">3</td>
             <td class="status-ok">Streaming</td>
@@ -1437,7 +1437,7 @@
         </table>
 
         <div class="page-help">
-          <p><b>Driver:</b> Must match the physical device. The ALSA zero-IF option expects a stereo 48/96/192 kHz capture card; the I channel carries the real RF spectrum.</p>
+          <p><b>Driver:</b> Must match the physical device. The PortAudio zero-IF option uses a stereo capture input at a supported sample rate, with I on the left and Q on the right.</p>
           <p><b>Center IF:</b> The RF frequency at the middle of the IQ passband. Slices are referenced to this center, so changing it shifts every decoder assigned to the receiver.</p>
           <p><b>Sample Rate:</b> Determines maximum usable bandwidth. A 192 kHz rate cannot host a 912 kHz slice plan.</p>
           <p><b>Swap I/Q:</b> Corrects inverted spectrum on sound-card and direct-conversion front-ends.</p>
