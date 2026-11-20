@@ -5,9 +5,14 @@
 #include <httplib.h>
 #include <sqlite3.h>
 
+#include <algorithm>
 #include <cmath>
+#include <complex>
+#include <ctime>
+#include <filesystem>
 #include <functional>
 #include <iostream>
+#include <random>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -20,6 +25,7 @@
 #include "core/process_usage.h"
 #include "core/schema.h"
 #include "decoder/settings.h"
+#include "dsp/spectrum.h"
 #include "web/common.h"
 
 namespace {
@@ -257,6 +263,11 @@ void TestWebHelpers() {
                           Json::array({Json::array({"=cmd()", "say \"hi\""})})),
               std::string("\"a\",\"b\"\r\n\"'=cmd()\",\"say \"\"hi\"\"\"\r\n"),
               "CSV quoting neutralizes formulas");
+  ExpectEqual(
+      CsvDocument(Json::array({"a", "b", "c"}),
+                  Json::array({Json::array({"-150.25", "-3", "-1+2"})})),
+      std::string("\"a\",\"b\",\"c\"\r\n\"-150.25\",\"-3\",\"'-1+2\"\r\n"),
+      "negative numbers stay numeric, other leading dashes do not");
   ExpectEqual<int64_t>(*GalleryDateStart("1970-01-02", "start"),
                        86400LL * 1000000LL, "gallery dates are UTC midnight");
   ExpectEqual<int64_t>(DaysFromCivil(2024, 2, 29) + 1,
@@ -435,6 +446,69 @@ void TestDecoderSettings() {
                "unknown decoder tables are rejected");
 }
 
+void TestNoiseFloor() {
+  Expect(skim::NoiseFloor({}) == 0, "an empty spectrum has no floor");
+  std::vector<double> flat(1000, 2.0);
+  ExpectEqual<double>(skim::NoiseFloor(flat), 2.0,
+                      "a flat spectrum is its floor");
+  // Strong carriers in a quarter of the bins and a deep roll-off at both
+  // edges leave the floor unchanged.
+  auto busy = flat;
+  for (size_t i = 0; i < busy.size(); i += 4) busy[i] = 1e6;
+  for (size_t i = 0; i < 80; ++i) busy[i] = busy[busy.size() - 1 - i] = 1e-6;
+  ExpectEqual<double>(skim::NoiseFloor(busy), 2.0,
+                      "carriers and band edges are excluded");
+
+  // End to end: complex noise of known density plus a tone, fed over two
+  // simulated minutes, yields one noise_floor row at that density.
+  const auto path =
+      std::filesystem::temp_directory_path() /
+      ("skim-noise-" + std::to_string(std::random_device{}()) + ".sqlite");
+  {
+    constexpr int rate = 48000;
+    constexpr double variance = 1e-4;
+    skim::SmSpectrum spectrum(path.string(), "hf", rate, 7000000);
+    std::mt19937 random(7);
+    std::normal_distribution<float> normal(0, std::sqrt(variance / 2));
+    std::vector<std::complex<float>> block(rate);
+    double phase = 0;
+    // Recent minutes, since publishing prunes spectra older than an hour.
+    const int64_t start = (std::time(nullptr) / 60 - 5) * 60;
+    for (int64_t second = start; second < start + 122; ++second) {
+      for (auto& sample : block) {
+        sample = {normal(random), normal(random)};
+        sample += std::polar(0.5f, static_cast<float>(phase));
+        phase += 2 * 3.141592653589793 * 6000 / rate;
+      }
+      spectrum.Observe(block.data(), block.size(), second);
+    }
+    const auto file = path.string();
+    auto rows = skim::web::Query(file.c_str(),
+                                 "SELECT utc,floor_db,samples FROM noise_floor",
+                                 {}, false);
+    ExpectEqual<size_t>(rows.size(), 2, "one noise floor row per minute");
+    const double expected = 10 * std::log10(variance / rate);
+    const auto floor = std::stod(rows[0][1].get<std::string>());
+    Expect(std::abs(floor - expected) < 0.5,
+           "noise floor density is " + std::to_string(floor) +
+               " dBFS/Hz, expected " + std::to_string(expected));
+    ExpectEqual<std::string>(rows[0][2], "60", "a minute averages 60 seconds");
+    auto bins = Json::parse(
+        skim::web::Query(file.c_str(),
+                         "SELECT bins FROM spectra ORDER BY utc DESC LIMIT 1",
+                         {}, false)[0][0]
+            .get<std::string>());
+    ExpectEqual<size_t>(bins.size(), skim::kSpectrumBins,
+                        "spectrum rows have the display bin count");
+    const auto peak = std::max_element(bins.begin(), bins.end()) - bins.begin();
+    const auto tone_bin =
+        skim::kSpectrumBins / 2 + 6000 * skim::kSpectrumBins / rate;
+    Expect(std::abs(peak - tone_bin) <= 1 && bins[peak] > -20,
+           "the tone peaks in its display bin");
+  }
+  std::filesystem::remove(path);
+}
+
 int main() {
   const std::pair<const char*, void (*)()> tests[] = {
       {"schedule windows", TestScheduleWindows},
@@ -446,6 +520,7 @@ int main() {
       {"schema", TestSchema},
       {"bands and usage", TestBandsAndUsage},
       {"decoder settings", TestDecoderSettings},
+      {"noise floor", TestNoiseFloor},
   };
   for (const auto& [name, test] : tests) {
     try {

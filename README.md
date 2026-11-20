@@ -129,6 +129,10 @@ dial_hz = 14074000
 
 The wizard selects **Repeat WAV playback** by default. Set `repeat = true` in TOML to loop the recording at its original sample rate, with decoder state reset at each wrap. With repeat disabled, playback runs once at processing speed. To replay a one-shot recording, restart the receiver workers or change the allocation. Set `utc_ms` to the Unix UTC timestamp in milliseconds of the first IQ frame when known. With the default of zero, timed decoders treat the first frame as a slot boundary. Decoded results remain in the panel and database. All reporting feeds, including the local Telnet DX Cluster, use live receptions.
 
+## Noise floor
+
+Each running receiver records its noise floor once a minute as the median power of its unoccupied FFT bins, excluding carriers and the band edges. The value is a density in dBFS/Hz, so receivers with different sample rates compare directly; add your receiver's calibration to read dBm/Hz. **Noise Floor Analysis** charts the last 24 hours per receiver with optional smoothing, lists per-band minimum, average and maximum with a six-hour trend, counts minutes above an optional alert threshold, and exports the minute values as CSV. System Summary shows each receiver's latest value.
+
 ## Reporting and backups
 
 The **DX Cluster**, **PSK Reporter**, and **RBN** pages configure their services; WSPRnet settings share the PSK Reporter page. Each service is disabled by default. The forms expose the options used by the running workers, station callsign and grid fallback, and current worker and receipt state. Saving a service change reloads its worker. An enabled service can be restarted locally without restarting other services or receiver workers. Blank host, port, or endpoint fields use the service default.

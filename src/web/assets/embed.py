@@ -141,8 +141,13 @@ help_overrides = {
         "download matching groups as CSV.</p>"
     ),
     "noise-floor": (
-        "<p><b>Noise Floor Analysis:</b> This page is not implemented. Spectrum readings are "
-        "relative dBFS and are not calibrated or analyzed as a noise floor.</p>"
+        "<p><b>Noise Floor:</b> Each running receiver records the median power of its unoccupied "
+        "FFT bins once a minute, excluding carriers and the band edges. Values are a density in "
+        "dBFS/Hz, so receivers with different sample rates compare directly; add your receiver's "
+        "calibration to read dBm/Hz.</p>"
+        "<p><b>Statistics:</b> Per-band rows cover the last 24 hours. The trend compares the last "
+        "six hours with the six before; a rise of 1 dB or more is flagged. An optional alert "
+        "threshold counts the minutes above it. Export downloads the minute values as CSV.</p>"
     ),
     "sstv-gallery": (
         "<p><b>Gallery:</b> Shows up to 100 recent SSTV PNG files stored on the daemon host. "

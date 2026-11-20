@@ -99,7 +99,19 @@ CREATE TABLE IF NOT EXISTS live_text(
   PRIMARY KEY(slice_id, frequency_hz));
 )sql";
 
-constexpr const char* kSteps[] = {kVersion1, kVersion2, kVersion3};
+// Version 4: one-minute noise-floor averages per receiver, in dBFS/Hz.
+constexpr char kVersion4[] = R"sql(
+CREATE TABLE IF NOT EXISTS noise_floor(
+  receiver TEXT NOT NULL,
+  utc INTEGER NOT NULL,
+  center_hz INTEGER NOT NULL,
+  rate INTEGER NOT NULL,
+  floor_db REAL NOT NULL,
+  samples INTEGER NOT NULL,
+  PRIMARY KEY(receiver, utc));
+)sql";
+
+constexpr const char* kSteps[] = {kVersion1, kVersion2, kVersion3, kVersion4};
 static_assert(sizeof(kSteps) / sizeof(kSteps[0]) == kStationSchemaVersion,
               "one migration step per schema version");
 }  // namespace

@@ -33,6 +33,9 @@ extern const char kSliceFrequencySql[];
 // SQL for the live CW or RTTY channel text of mode ?1 and receiver ?2 (empty
 // for all), updated within the last minute.
 extern const char kLiveTextSql[];
+// SQL for the latest noise floor of receiver worker w within three minutes,
+// or an em dash.
+extern const char kNoiseFloorSql[];
 // SQL formatting a worker row's CPU and memory, or an em dash.
 extern const char kWorkerUsageSql[];
 
@@ -147,6 +150,10 @@ void RegisterAdminRoutes(httplib::Server& server, SmWebContext& ctx);
 void RegisterGalleryRoutes(httplib::Server& server, SmWebContext& ctx);
 void RegisterPageRoutes(httplib::Server& server, SmWebContext& ctx);
 void RegisterDecoderRoutes(httplib::Server& server, SmWebContext& ctx);
+void RegisterAnalysisRoutes(httplib::Server& server, SmWebContext& ctx);
+void RenderNoiseFloor(SmWebContext& ctx, const SmReferencePage& page,
+                      const httplib::Request& req, httplib::Response& res,
+                      Json model);
 // Renders a CW, RTTY or digital decoder page with extra model fields, such as
 // on-demand decode results. Pages showing results do not auto-refresh.
 void RenderDecoderPageWith(SmWebContext& ctx, const std::string& slug,

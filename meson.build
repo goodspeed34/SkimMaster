@@ -94,6 +94,7 @@ sources = files(
   'src/store/store.cpp',
   'src/store/workers.cpp',
   'src/web/admin.cpp',
+  'src/web/analysis.cpp',
   'src/web/decoders.cpp',
   'src/web/common.cpp',
   'src/web/gallery.cpp',

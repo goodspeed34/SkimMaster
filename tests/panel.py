@@ -93,8 +93,33 @@ with tempfile.TemporaryDirectory() as directory:
         assert source_offer is not None
         assert b'<div class="page-title">Slice Allocation Table</div>' in get("/slice-allocation")
         noise = get("/noise-floor")
-        assert b'<p>Unimplemented</p>' in noise
-        assert b"Median bin (dBFS)" not in noise
+        assert b"No noise-floor history yet" in noise and b'data-chart="noise"' in noise
+        minute = int(time.time()) // 60 * 60
+        history = [("hf", minute - 60 * (i + 1), 14074000, 192000,
+                    -150.0 if i < 12 else -153.0, 60) for i in range(12)]
+        history += [("hf", minute - 6 * 3600 - 60 * (i + 1), 14074000, 192000,
+                     -153.0, 60) for i in range(12)]
+        with closing(sqlite3.connect(db)) as connection, connection:
+            connection.executemany(
+                "INSERT INTO noise_floor VALUES(?,?,?,?,?,?)", history)
+        noise = get("/noise-floor?threshold=-151.5&smoothing=1")
+        row = re.search(rb"<tr><td><b>20m</b></td><td>hf</td>(.*?)</tr>", noise)
+        assert row, noise
+        assert b">-153.0<" in row[1] and b">-151.5<" in row[1] and b">-150.0<" in row[1]
+        assert b'class="status-warn">+3.0 dB / 6h' in row[1], row[1]
+        assert b">24<" in row[1] and b">12<" in row[1], row[1]
+        assert b"hf on 20m exceeded the threshold in 12 of 24 minutes" in noise
+        points = json.loads(get("/data/noise?receiver=hf&smoothing=1"))
+        assert len(points) == 24 and points[-1][0] == "hf", points
+        assert len(json.loads(get("/data/noise?smoothing=15"))) <= 4
+        noise_csv = get("/noise-floor?format=csv&receiver=hf").decode()
+        assert noise_csv.startswith('"UTC","Receiver","Band","RF Center (Hz)"')
+        assert noise_csv.count("\n") == 25, noise_csv
+        assert '"hf","20m","14074000","192000","-150.00","60"' in noise_csv
+        bad_threshold = get("/noise-floor?threshold=loud")
+        assert b"invalid threshold" in bad_threshold
+        with closing(sqlite3.connect(db)) as connection, connection:
+            connection.execute("DELETE FROM noise_floor")
         assert b'canvas id="chart"' in get("/spectrum-waterfall")
         assert get("/style.css") == source("style.css")
         assert b"CQ R7IW LN35" in html and b"&lt;antenna&gt;" in html

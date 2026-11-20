@@ -19,6 +19,10 @@ ABIs are versioned separately by their exported symbol names.
   seconds.
 - **Decode a Recording** on the decoder pages: decode an uploaded WAV with the
   saved settings and show the results without storing or reporting them.
+- Noise Floor Analysis: one-minute noise-floor densities per receiver
+  (`noise_floor`, schema version 4), a 24-hour chart, per-band statistics
+  with trend and alert threshold, CSV export, and the latest value in the
+  System Summary.
 - Panel restore of an uploaded snapshot, a redacted diagnostics bundle and a
   confirmed factory reset. Each change is staged and applied by an in-process
   station restart that keeps a snapshot of the previous data.
@@ -30,6 +34,11 @@ ABIs are versioned separately by their exported symbol names.
 - CI format check and AddressSanitizer/UBSan and ThreadSanitizer runs.
 
 ### Changed
+
+- The spectrum uses averaged 2048-point FFTW frames and 512 display bins
+  instead of a single 256-point transform.
+- CSV exports keep negative numbers numeric; other cells starting with a
+  formula character are still prefixed with an apostrophe.
 
 - Slot decoder plugin ABI v3: `skim_slot_decoder_v3` replaces
   `skim_slot_decoder_v2`. Metadata declares settings, and `start` and the

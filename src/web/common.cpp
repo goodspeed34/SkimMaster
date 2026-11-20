@@ -206,8 +206,12 @@ std::string CsvDocument(const Json& columns, const Json& rows) {
       first = false;
       csv << '"';
       const auto& value = cell.get_ref<const std::string&>();
-      if (!value.empty() && std::string_view("=+-@\t\r").find(value.front()) !=
-                                std::string_view::npos)
+      // Neutralize spreadsheet formulas, but keep negative numbers numeric.
+      static const std::regex number(R"(-?[0-9]+(\.[0-9]+)?)");
+      if (!value.empty() &&
+          std::string_view("=+-@\t\r").find(value.front()) !=
+              std::string_view::npos &&
+          !std::regex_match(value, number))
         csv << '\'';
       for (char c : value) {
         if (c == '"') csv << '"';

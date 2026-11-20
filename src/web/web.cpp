@@ -66,6 +66,7 @@ void Serve(const char* config, const char* address, int port,
   web::RegisterServiceRoutes(server, ctx);
   web::RegisterAdminRoutes(server, ctx);
   web::RegisterDecoderRoutes(server, ctx);
+  web::RegisterAnalysisRoutes(server, ctx);
   server.Get(R"(/data/(spectrum|map))", [&](const httplib::Request& req,
                                             httplib::Response& res) {
     Json rows;

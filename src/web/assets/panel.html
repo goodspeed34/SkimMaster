@@ -1,5 +1,24 @@
 {% if page == "noise-floor" %}
-<p>Unimplemented</p>
+{% if noise_error != "" %}<p class="notice notice-warn" role="alert">{{ noise_error }}</p>{% endif %}
+<form method="get" action="/noise-floor">
+<table class="cfg-table">
+  <tr><th colspan="4">Analysis Controls</th></tr>
+  <tr><td class="label-col" style="width:15%;">Receiver:</td><td style="width:35%;"><select name="receiver"><option value=""{% if selected_receiver == "" %} selected{% endif %}>All receivers</option>{% for source in noise_sources %}<option value="{{ source }}"{% if selected_receiver == source %} selected{% endif %}>{{ source }}</option>{% endfor %}</select></td>
+  <td class="label-col" style="width:15%;">Smoothing:</td><td><select name="smoothing"><option value="1"{% if smoothing == "1" %} selected{% endif %}>1-minute values</option><option value="5"{% if smoothing == "5" %} selected{% endif %}>5-minute average</option><option value="15"{% if smoothing == "15" %} selected{% endif %}>15-minute average</option></select></td></tr>
+  <tr><td class="label-col">Alert Threshold:</td><td colspan="3"><input class="mono" type="number" step="any" name="threshold" value="{{ threshold }}" size="8"> dBFS/Hz <span class="hint-inline">(optional; counts minutes above it)</span></td></tr>
+  <tr><td colspan="4" class="center"><button class="btn-native"><b>Refresh Chart</b></button> <button class="btn-native" name="format" value="csv">Export Data (.csv)</button></td></tr>
+</table>
+</form>
+<table class="cfg-table"><tr><th>Noise Floor &mdash; 24 Hour History (dBFS/Hz)</th></tr></table>
+<canvas id="chart" class="chart-canvas" width="900" height="230" data-chart="noise">Noise-floor chart requires JavaScript.</canvas><p id="chart-status" class="chart-caption"></p><script src="/charts.js"></script>
+<table class="cfg-table">
+  <tr><th colspan="8">Per-Band Noise Statistics (24 h)</th></tr>
+  <tr><th>Band</th><th>Receiver</th><th class="num">24h Min</th><th class="num">24h Average</th><th class="num">24h Max</th><th>Trend</th><th class="num">Minutes</th><th class="num">Above Threshold</th></tr>
+  {% for row in noise_rows %}<tr><td><b>{{ row.0 }}</b></td><td>{{ row.1 }}</td><td class="num mono">{{ row.2 }}</td><td class="num mono">{{ row.3 }}</td><td class="num mono">{{ row.4 }}</td><td class="{{ row.6 }}">{{ row.5 }}</td><td class="num mono">{{ row.7 }}</td><td class="num mono">{% if threshold == "" %}&mdash;{% else %}{{ row.8 }}{% endif %}</td></tr>{% endfor %}
+  {% if length(noise_rows) == 0 %}<tr><td colspan="8">No noise-floor history yet. Receivers record a value each minute while they run.</td></tr>{% endif %}
+</table>
+{% for alert in noise_alerts %}<div class="notice notice-warn"><b>Threshold notice:</b> {{ alert }}</div>{% endfor %}
+<p class="notice notice-info">The noise floor is the median power of unoccupied FFT bins, excluding carriers and the band edges, as a density relative to a full-scale signal. Convert to dBm/Hz with your receiver's calibration.</p>
 {% else %}
 {% if exists("config_error") %}{% if config_error != "" %}
 <div class="notice notice-warn" role="alert"><b>Station configuration could not be loaded.</b> {{ config_error }} {{ config_recovery_guidance }}</div>

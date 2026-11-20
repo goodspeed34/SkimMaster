@@ -41,7 +41,7 @@ CW and RTTY decoders also report a `SmTextChannel` snapshot of each active chann
 
 On-demand decodes from the panel go through `DecodeRecording` (`decoder/recording.cpp`) in the web process. Slot modes reuse `DecodeSlot` and the installed plugin. CW and RTTY feed the WAV through `DecodeText`. Results are rendered on the decoder page and never reach `SaveSlot`. SSTV writes completed Martin, Scottie and Robot images to the gallery.
 
-Capture uses device timestamps to detect discontinuities when available. Live timed slots anchor sample time to host UTC, discard incomplete windows and check synchronization before accepting new samples. The slot periods are 7.5 seconds for FT4, 15 seconds for FT8 and 120 seconds for WSPR. Spectrum frames provide relative dBFS readings.
+Capture uses device timestamps to detect discontinuities when available. Live timed slots anchor sample time to host UTC, discard incomplete windows and check synchronization before accepting new samples. The slot periods are 7.5 seconds for FT4, 15 seconds for FT8 and 120 seconds for WSPR. Spectrum frames provide relative dBFS readings. `SmSpectrum` averages up to sixteen 2048-point FFTW frames from the start of each second into a 512-bin `spectra` row. Rows are kept for an hour. It also takes the median of the unoccupied bins (the central 80%, excluding bins more than 6 dB above their median) and converts it to a density in dBFS/Hz. One-minute averages of that density go to `noise_floor` and are kept for seven days. The Noise Floor page and System Summary read that table.
 
 ## Configuration and lifecycle
 

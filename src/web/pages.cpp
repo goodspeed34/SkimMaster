@@ -405,14 +405,16 @@ void RegisterPageRoutes(httplib::Server& server, SmWebContext& ctx) {
             model["grid"] = identity[0][1];
           }
         }
-        model["receiver_status"] =
-            Query(ctx.database,
-                  "SELECT w.id,json_extract(w.plan,'$.device'),"
-                  "printf('%.3f MHz',json_extract(w.plan,'$.center_hz')/1e6),"
-                  "printf('%g kHz',json_extract(w.plan,'$.rate')/1e3),"
-                  "json_array_length(w.plan,'$.slices'),"
-                  "'—',w.status "
-                  "FROM workers w WHERE w.kind='receiver' ORDER BY w.id");
+        model["receiver_status"] = Query(
+            ctx.database,
+            (std::string(
+                 "SELECT w.id,json_extract(w.plan,'$.device'),"
+                 "printf('%.3f MHz',json_extract(w.plan,'$.center_hz')/1e6),"
+                 "printf('%g kHz',json_extract(w.plan,'$.rate')/1e3),"
+                 "json_array_length(w.plan,'$.slices'),") +
+             kNoiseFloorSql +
+             ",w.status FROM workers w WHERE w.kind='receiver' ORDER BY w.id")
+                .c_str());
         model["processes"] = Query(
             ctx.database,
             (std::string("SELECT w.id,w.kind,w.state,coalesce(w.pid,'—'),") +
@@ -474,7 +476,7 @@ void RegisterPageRoutes(httplib::Server& server, SmWebContext& ctx) {
         RenderDecoderPage(ctx, slug, *page, req, res, std::move(model));
         return;
       } else if (slug == "noise-floor") {
-        ctx.Render(*page, model, res);
+        RenderNoiseFloor(ctx, *page, req, res, std::move(model));
         return;
       } else if (slug == "receiver-status") {
         RenderReceiverStatus(ctx, *page, settings_view, res, std::move(model));
