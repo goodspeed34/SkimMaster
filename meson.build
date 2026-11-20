@@ -86,6 +86,13 @@ sources = files(
   'src/report/reporting.cpp',
   'src/store/store.cpp',
   'src/store/workers.cpp',
+  'src/web/admin.cpp',
+  'src/web/common.cpp',
+  'src/web/gallery.cpp',
+  'src/web/pages.cpp',
+  'src/web/receivers.cpp',
+  'src/web/schedules.cpp',
+  'src/web/services.cpp',
   'src/web/web.cpp',
 )
 

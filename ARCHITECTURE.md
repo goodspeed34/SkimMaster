@@ -12,7 +12,7 @@ Skim Master converts wideband IQ into independently decoded slices, records rece
 | `src/decoder` | Slot and streaming decoders and the decoder plugin ABI |
 | `src/store` | Transactional reception writes |
 | `src/report` | Telnet, PSKReporter, WSPRnet and direct RBN |
-| `src/web` | Read models, admin handlers and embedded assets |
+| `src/web` | Read models, admin handlers and embedded assets, with one route module per panel area sharing `web/common.h` |
 | `src/app` | CLI, supervisor, schedules, pipeline orchestration, backup and replay |
 
 Core headers have no dependencies on other project layers. Receivers expose IQ, while decoders consume IQ and emit domain data. The application supplies the stream and persists the results. Web handlers call the station configuration API and read committed state through SQLite.
