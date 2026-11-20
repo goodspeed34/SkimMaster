@@ -17,7 +17,7 @@ Skim Master converts wideband IQ into independently decoded slices, records rece
 
 Core headers have no dependencies on other project layers. Receivers expose IQ, while decoders consume IQ and emit domain data. The application supplies the stream and persists the results. Web handlers call the station configuration API and read committed state through SQLite.
 
-Bundled receiver modules expose `SmReceiverPlugin` through `skim_receiver_v2`. The driver registry supplies the ID, prefix and label, and the loader checks the loaded plugin's ID. A probe takes a driver-specific target and reports device parameters, labels and sample rates when available. The wizard and receiver editor use the same probe path. The host can also load v1 receiver modules, and the bundled modules retain their v1 C exports. The v2 interface uses the same C++ toolchain compatibility model as the slot decoder plugins.
+Bundled receiver modules expose `SmReceiverPlugin` through `skim_receiver_v2`. The driver registry supplies the ID, prefix and label, and the loader checks the loaded plugin's ID. A probe takes a driver-specific target and reports device parameters, labels and sample rates when available. The wizard and receiver editor use the same probe path. The v2 interface uses the same C++ toolchain compatibility model as the slot decoder plugins.
 
 Receiver edits use the station TOML revision check and atomic save. The supervisor applies the resulting allocation changes.
 

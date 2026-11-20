@@ -9,9 +9,6 @@
 #include <exception>
 #include <iostream>
 #include <stdexcept>
-#include <type_traits>
-
-#include "receiver/api.h"
 
 #ifdef _WIN32
 #include <fcntl.h>
@@ -43,7 +40,9 @@ class SmReceiverSession {
  public:
   explicit SmReceiverSession(const SmReceiverDriver& driver)
       : module_(LoadReceiverModule(driver)) {
-    if (!module_.has("skim_receiver_v2")) return;
+    if (!module_.has("skim_receiver_v2"))
+      throw std::runtime_error(
+          "receiver module does not export skim_receiver_v2");
     plugin_ =
         module_.get<const SmReceiverPlugin*() noexcept>("skim_receiver_v2")();
     if (!plugin_ || plugin_->metadata().driver_id != driver.id)
@@ -51,41 +50,12 @@ class SmReceiverSession {
   }
 
   void Probe(const std::string& selector, const SmReceiverCandidate& found) {
-    if (plugin_) {
-      InvokePlugin([&] { plugin_->Probe(selector, found); },
-                   "receiver probe failed");
-      return;
-    }
-    if (!module_.has("skim_receiver_probe_v1"))
-      throw std::runtime_error(
-          "installed receiver module does not support probing");
-    auto& probe = module_.get<std::remove_pointer_t<skim_receiver_probe>>(
-        "skim_receiver_probe_v1");
-    struct SmProbeCallbacks {
-      const SmReceiverCandidate& found;
-      std::exception_ptr error;
-    } callbacks{found, {}};
-    auto emit = [](void* opaque, const char* device, const char* label,
-                   uint32_t rate) {
-      auto& c = *static_cast<SmProbeCallbacks*>(opaque);
-      if (c.error) return 1;
-      try {
-        return c.found(device, label, rate) ? 0 : 1;
-      } catch (...) {
-        c.error = std::current_exception();
-        return 1;
-      }
-    };
-    std::array<char, 512> error{};
-    const auto status =
-        probe(selector.c_str(), emit, &callbacks, error.data(), error.size());
-    if (callbacks.error) std::rethrow_exception(callbacks.error);
-    if (status) throw std::runtime_error(error.data());
+    InvokePlugin([&] { plugin_->Probe(selector, found); },
+                 "receiver probe failed");
   }
 
   void Capture(const SmReceiverCaptureRequest& request, const Samples& consume,
                const std::function<void()>& gap) {
-    if (!plugin_) return CaptureV1(request, consume, gap);
     std::exception_ptr callback_error;
     auto call = [&](const auto& callback) {
       if (callback_error) std::rethrow_exception(callback_error);
@@ -109,43 +79,8 @@ class SmReceiverSession {
   }
 
  private:
-  void CaptureV1(const SmReceiverCaptureRequest& request,
-                 const Samples& consume, const std::function<void()>& gap) {
-    auto api = module_.get<const skim_radio_api*()>("skim_receiver_v1")();
-    if (!api || api->version != 1 || api->size < sizeof(*api) || !api->capture)
-      throw std::runtime_error("unsupported receiver ABI");
-    struct SmCaptureCallbacks {
-      const Samples& consume;
-      const std::function<void()>& gap;
-      std::exception_ptr error;
-    } callbacks{consume, gap, {}};
-    auto callback = [](void* opaque, const float* data, uint32_t count) {
-      auto& c = *static_cast<SmCaptureCallbacks*>(opaque);
-      if (c.error) return -1;
-      try {
-        if (data)
-          c.consume(reinterpret_cast<const std::complex<float>*>(data), count);
-        else
-          c.gap();
-        return 0;
-      } catch (...) {
-        c.error = std::current_exception();
-        return -1;
-      }
-    };
-    skim_radio_config cfg{request.device.c_str(), request.center_hz,
-                          static_cast<uint32_t>(request.rate),
-                          request.gain_db.value_or(NAN),
-                          request.correction_ppm.value_or(NAN)};
-    std::array<char, 512> error{};
-    const auto status =
-        api->capture(&cfg, callback, &callbacks, error.data(), error.size());
-    if (callbacks.error) std::rethrow_exception(callbacks.error);
-    if (status) throw std::runtime_error(error.data());
-  }
-
   boost::dll::shared_library module_;
-  const SmReceiverPlugin* plugin_ = nullptr;
+  const SmReceiverPlugin* plugin_;
 };
 }  // namespace
 
