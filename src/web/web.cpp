@@ -559,7 +559,7 @@ void Serve(const char* config, const char* address, int port,
       const auto& receiver = source->settings();
       const auto& name = source->id();
       const auto& device = source->device();
-      const auto& driver = DriverFor(device);
+      const auto& driver = *source->driver();
       receivers.push_back({{"name", Escape(name.c_str())},
                            {"device", Escape(device.c_str())},
                            {"driver", driver.label},
@@ -1645,7 +1645,7 @@ void Serve(const char* config, const char* address, int port,
                              : receiver.contains("schedules") ? "Standby"
                                                               : "Unallocated";
           model["rows"].push_back({name,
-                                   std::string(DriverFor(device).label) +
+                                   std::string(source->driver()->label) +
                                        " · " + Escape(device.c_str()),
                                    worker ? (*worker)[2] : Json(center),
                                    source->rate(),

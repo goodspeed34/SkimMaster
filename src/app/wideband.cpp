@@ -276,6 +276,11 @@ void SmReceiver::RunWideband() const {
   const auto center = configured_center().value_or(0);
   if (rate < 12000 || rate > 6144000 || center <= 0 || center > 1000000000000LL)
     throw std::runtime_error("invalid receiver configuration");
+  SmReceiverCaptureRequest capture{device, center, rate, {}, {}};
+  if (root.contains("gain_db"))
+    capture.gain_db = root.at("gain_db").get<double>();
+  if (root.contains("ppm"))
+    capture.correction_ppm = root.at("ppm").get<double>();
   const bool repeat = root.value("repeat", false);
   if (repeat && !IsWavReceiver(device))
     throw std::runtime_error("repeat is available only for WAV receivers");
@@ -297,8 +302,7 @@ void SmReceiver::RunWideband() const {
           const auto started = std::chrono::steady_clock::now();
           uint64_t frames = 0;
           ReadReceiver(
-              device.c_str(), center, rate, root.value("gain_db", double(NAN)),
-              root.value("ppm", double(NAN)),
+              capture,
               [&](const std::complex<float>* data, size_t n) {
                 if (stop.load())
                   throw std::runtime_error("slot collection stopped");

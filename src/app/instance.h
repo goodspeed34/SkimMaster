@@ -14,6 +14,7 @@ namespace skim {
 class SmInstance;
 struct SmInstanceSettings;
 class SmReceiver;
+struct SmReceiverDriver;
 class SmSlice;
 class SmSlotDecoder;
 class SmSlotDecoderSession;
@@ -102,6 +103,8 @@ class SmReceiver {
 
   const std::string& id() const { return id_; }
   const std::string& device() const { return device_; }
+  // Stdin is a built-in source and has no plugin driver.
+  const SmReceiverDriver* driver() const;
   int rate() const { return rate_; }
   bool enabled() const { return enabled_; }
   std::optional<int64_t> configured_center() const { return center_; }

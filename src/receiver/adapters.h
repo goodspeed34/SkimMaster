@@ -1,10 +1,8 @@
 #pragma once
-#include "receiver/receiver.h"
+#include "receiver/plugin_api.h"
 namespace skim {
-// Emit the backend's device parameter, a display label and an optional rate.
-using ReceiverCandidate =
-    std::function<bool(const std::string&, const std::string&, uint32_t)>;
-void ProbeDevices(const std::string& selector, const ReceiverCandidate& found);
+void ProbeDevices(const std::string& selector,
+                  const SmReceiverCandidate& found);
 void ReadWavIq(const char* path, int rate, const Samples& consume);
 void ReadSoapy(const char* device, int64_t center, int rate, double gain,
                double ppm, const Samples& samples,

@@ -81,7 +81,8 @@ foreach radio : ['soapy', 'rtltcp', 'alsa', 'wav']
   endif
   radio_modules += shared_module('rcvr'+radio, 'src/receiver/plugin.cpp', driver_source,
     include_directories : src_includes,
-    dependencies : driver_deps, cpp_args : ['-DSKIM_'+radio.to_upper()],
+    dependencies : driver_deps,
+    cpp_args : ['-DSKIM_'+radio.to_upper(), '-DSKIM_RECEIVER_ID="' + radio + '"'],
     name_prefix : 'lib', name_suffix : module_suffix, install : true, install_dir : get_option('bindir'))
 endforeach
 

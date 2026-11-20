@@ -8,6 +8,7 @@
 #include "app/config.h"
 #include "app/slice_tuning.h"
 #include "decoder/session.h"
+#include "receiver/receiver.h"
 
 namespace skim {
 namespace {
@@ -104,6 +105,10 @@ SmReceiver::SmReceiver(const SmInstance& instance, const Json& settings)
       settings_(settings) {
   if (settings.contains("center_hz"))
     center_ = settings.at("center_hz").get<int64_t>();
+}
+
+const SmReceiverDriver* SmReceiver::driver() const {
+  return device() == "-" ? nullptr : &DriverFor(device());
 }
 
 std::shared_ptr<const SmSlice> SmReceiver::find_slice(

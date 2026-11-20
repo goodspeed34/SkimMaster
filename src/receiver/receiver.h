@@ -5,7 +5,7 @@
 #include <string_view>
 #include <vector>
 
-#include "core/iq.h"
+#include "receiver/plugin_api.h"
 
 namespace skim {
 struct SmReceiverDriver {
@@ -34,6 +34,8 @@ std::filesystem::path ResolveWavPath(std::string_view path,
                                      const std::filesystem::path& base = {});
 using IqReader = std::function<void(const char*, int64_t, int, const Samples&,
                                     const std::function<void()>&)>;
+void ReadReceiver(SmReceiverCaptureRequest request, const Samples& samples,
+                  const std::function<void()>& gap);
 void ReadReceiver(const char* device, int64_t center, int rate, double gain,
                   double ppm, const Samples& samples,
                   const std::function<void()>& gap);

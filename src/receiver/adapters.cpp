@@ -6,6 +6,7 @@
 #endif
 #include <array>
 #include <chrono>
+#include <cmath>
 #include <cstdlib>
 #include <cstring>
 #include <memory>
@@ -32,7 +33,8 @@ void CheckRtlHeader(const RtlHeader& header) {
     throw std::runtime_error("invalid rtl_tcp handshake");
 }
 }  // namespace
-void ProbeDevices(const std::string& selector, const ReceiverCandidate& found) {
+void ProbeDevices(const std::string& selector,
+                  const SmReceiverCandidate& found) {
   const auto address = selector.empty() ? "127.0.0.1:1234" : selector;
   const auto [host, port] = RtlEndpoint(address);
   boost::asio::io_context io;
@@ -113,7 +115,8 @@ void ReadRtlTcp(const std::string& address, int64_t center, int rate,
 }
 #endif
 #ifdef SKIM_ALSA
-void ProbeDevices(const std::string& selector, const ReceiverCandidate& found) {
+void ProbeDevices(const std::string& selector,
+                  const SmReceiverCandidate& found) {
   void** hints = nullptr;
   const int rc = snd_device_name_hint(-1, "pcm", &hints);
   if (rc < 0) throw std::runtime_error(snd_strerror(rc));

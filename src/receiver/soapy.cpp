@@ -2,12 +2,14 @@
 #include <SoapySDR/Errors.hpp>
 #include <SoapySDR/Formats.hpp>
 #include <array>
+#include <cmath>
 #include <memory>
 #include <stdexcept>
 
 #include "receiver/adapters.h"
 namespace skim {
-void ProbeDevices(const std::string& selector, const ReceiverCandidate& found) {
+void ProbeDevices(const std::string& selector,
+                  const SmReceiverCandidate& found) {
   for (const auto& args : SoapySDR::Device::enumerate(selector)) {
     auto device = SoapySDR::KwargsToString(args);
     auto label = args.find("label");

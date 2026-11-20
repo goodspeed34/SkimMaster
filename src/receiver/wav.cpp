@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <array>
 #include <cctype>
+#include <filesystem>
 #include <memory>
 #include <stdexcept>
 
@@ -26,7 +27,8 @@ WavFile OpenIq(const char* path, SF_INFO& info) {
   return input;
 }
 }  // namespace
-void ProbeDevices(const std::string& selector, const ReceiverCandidate& found) {
+void ProbeDevices(const std::string& selector,
+                  const SmReceiverCandidate& found) {
   namespace fs = std::filesystem;
   auto emit = [&](const fs::path& path, const SF_INFO& info) {
     return found(path.string(), path.filename().string(), info.samplerate);

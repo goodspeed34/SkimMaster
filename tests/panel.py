@@ -259,15 +259,17 @@ with tempfile.TemporaryDirectory() as directory:
                 with radio.accept()[0] as client:
                     client.sendall(b"RTL0" + bytes(8))
                     with client.makefile("rb") as stream:
-                        commands.append(stream.read(10))
+                        commands.append(stream.read(25))
                     client.sendall(bytes(8192))
 
             listener = threading.Thread(target=stream_iq)
             listener.start()
             assert b"IQ samples received" in post(
-                "/receiver-test", {**add, **capture, "device": f"rtltcp:{target}"})
+                "/receiver-test", {**add, **capture, "device": f"rtltcp:{target}",
+                                   "gain_db": "12.3", "ppm": "-4"})
             listener.join(5)
-            assert commands == [struct.pack(">BIBI", 2, 48000, 1, 7050000)]
+            assert commands == [struct.pack(">BIBIBIBIBi", 2, 48000, 1, 7050000,
+                                            3, 1, 4, 123, 5, -4)]
 
         receiver = {"action": "save", "receiver": "Desk & IQ", "device": "wav:short IQ.wav",
                     "rate": "48000", "enabled": "on", "center_hz": "7050000",
