@@ -91,6 +91,15 @@ void RenderDecoderPage(SmWebContext& ctx, const std::string& slug,
          {"manage_url", EditReceiverUrl(receiver)}});
   }
   model["allocation_empty"] = model["allocation_rows"].empty();
+  AddDecoderSettings(slug, settings, model);
+  model["csrf"] = ctx.token;
+  const auto saved = req.get_param_value("saved");
+  model["settings_notice"] =
+      saved.empty() ? ""
+                    : Escape(saved.c_str()) +
+                          std::string(
+                              " decoder settings saved. Receivers "
+                              "using the mode restart to apply them.");
 
   const auto receiver = req.get_param_value("receiver");
   auto selected_mode = req.get_param_value("mode");

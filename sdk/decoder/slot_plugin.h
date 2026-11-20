@@ -16,7 +16,8 @@ class SmBuiltinSlotDecoder final : public SmSlotDecoderPlugin {
  public:
   using DecodeSamples = std::vector<SmSpot> (*)(SmSlotMode,
                                                 const std::vector<float>&,
-                                                std::mutex&);
+                                                std::mutex&,
+                                                const SmSettingValues&);
 
   SmBuiltinSlotDecoder(SmSlotDecoderMetadata metadata, DecodeSamples decode)
       : metadata_(std::move(metadata)), decode_(decode) {}
@@ -27,10 +28,12 @@ class SmBuiltinSlotDecoder final : public SmSlotDecoderPlugin {
 
   std::future<void> start(std::string decoder_id, DecoderInput& input,
                           std::string endpoint, const std::atomic_bool& stop,
-                          std::mutex& fft_planner) const override {
+                          std::mutex& fft_planner,
+                          SmSettingValues options) const override {
     return std::async(std::launch::async, [this, id = std::move(decoder_id),
                                            endpoint = std::move(endpoint),
-                                           &input, &stop, &fft_planner] {
+                                           options = std::move(options), &input,
+                                           &stop, &fft_planner] {
       using namespace decoder_wire;
       SmResultSocket output(nng_req0_open);
       Check(nng_socket_set_ms(output.socket, NNG_OPT_SENDTIMEO, 5000));
@@ -44,7 +47,8 @@ class SmBuiltinSlotDecoder final : public SmSlotDecoderPlugin {
           continue;
         if (!slot || stop.load()) return;
         const auto& audio = std::get<std::vector<float>>(slot->samples);
-        auto spots = decode_(metadata_.supported_mode, audio, fft_planner);
+        auto spots =
+            decode_(metadata_.supported_mode, audio, fft_planner, options);
         Send(output.socket, Encode({id, slot->utc_ms, std::move(spots)}));
         auto reply = Receive(output.socket);
         if (nng_msg_len(reply.get()) != 0)

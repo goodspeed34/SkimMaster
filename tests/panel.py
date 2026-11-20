@@ -223,6 +223,34 @@ with tempfile.TemporaryDirectory() as directory:
             time.sleep(.04)
         else:
             raise AssertionError("local service restart was not applied")
+        rtty_page = get("/rtty-skimmer")
+        assert b"RTTY Decoder Settings" in rtty_page
+        assert b'name="shift_hz"' in rtty_page and b'name="reverse"' in rtty_page
+        digital_page = get("/digital-decoders")
+        for mode in [b"FT8", b"FT4", b"WSPR"]:
+            assert mode + b" Decoder Settings" in digital_page
+        assert b'name="ldpc_iterations"' in digital_page
+        assert b'name="passes"' in digital_page
+        rtty_form = {**form("/rtty-skimmer"), "mode": "RTTY",
+                     "shift_hz": "850", "baud": "45.45", "reverse": "on",
+                     "max_channels": "16", "threshold": "24"}
+        saved_rtty = post("/decoder-settings", rtty_form)
+        assert b"RTTY decoder settings saved" in saved_rtty
+        assert b'<option value="850" selected>' in saved_rtty
+        rtty_config = re.search(r"\[decoders\.RTTY\]\s*(.*?)(?:\n\[|\Z)",
+                                config.read_text(), re.S)
+        assert rtty_config, config.read_text()
+        assert "shift_hz = 850" in rtty_config[1]
+        assert "reverse = true" in rtty_config[1]
+        assert "threshold = 24" in rtty_config[1]
+        assert "baud" not in rtty_config[1] and "max_channels" not in rtty_config[1]
+        rejected = post("/decoder-settings", {**form("/rtty-skimmer"),
+                        **rtty_form, "shift_hz": "200"}, 400)
+        assert b"Shift (Hz) is out of range" in rejected
+        reverted = {**form("/rtty-skimmer"), "mode": "RTTY", "shift_hz": "170",
+                    "baud": "45.45", "max_channels": "16", "threshold": "32"}
+        post("/decoder-settings", reverted)
+        assert "[decoders" not in config.read_text()
         assert b"No IQ sources configured." in get("/receiver-edit")
         assert b"Station TOML" not in get("/receiver-edit")
         wizard = get("/wizard")

@@ -10,6 +10,8 @@
 #include <string_view>
 #include <vector>
 
+#include "core/settings.h"
+
 namespace skim {
 class SmInstance;
 struct SmInstanceSettings;
@@ -34,6 +36,8 @@ class SmDecoder {
   const SmSlice& slice() const { return slice_; }
   SmMode mode() const { return mode_; }
   virtual const SmSlotDecoder* slot_decoder() const { return nullptr; }
+  // The decoder settings with defaults filled in and values validated.
+  SmSettingValues options() const;
 
  protected:
   friend class SmSlice;
@@ -79,6 +83,9 @@ class SmSlice {
   int64_t reference_hz(int64_t receiver_center) const;
   int64_t capture_hz(int64_t receiver_center) const;
   bool fits(int64_t receiver_center) const;
+  // The [decoders.<MODE>] table that applies to this slice. Worker plans
+  // carry it, so a change restarts the allocations that use the mode.
+  const nlohmann::json& decoder_settings() const;
   nlohmann::json WorkerPlan() const;
 
  private:
@@ -170,6 +177,8 @@ class SmInstance : public std::enable_shared_from_this<SmInstance> {
   std::shared_ptr<const SmSlice> find_slice(std::string_view id) const;
   std::shared_ptr<const SmDecoder> find_decoder(std::string_view id) const;
   std::shared_ptr<const SmService> find_service(std::string_view id) const;
+  // The station-wide [decoders] table for a mode, or an empty object.
+  const nlohmann::json& decoder_settings(SmMode mode) const;
   // Resolves the allocation for a UTC minute of the day and weekday (Monday
   // is 0). Returns one plan per active receiver and enabled service, keyed by
   // worker ID.
@@ -191,5 +200,6 @@ class SmInstance : public std::enable_shared_from_this<SmInstance> {
   std::map<std::string, std::unique_ptr<SmService>, std::less<>> service_ids_;
   std::vector<const SmReceiver*> receivers_;
   std::vector<const SmService*> services_;
+  nlohmann::json decoders_ = nlohmann::json::object();
 };
 }  // namespace skim

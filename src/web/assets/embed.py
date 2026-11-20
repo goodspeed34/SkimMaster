@@ -94,18 +94,25 @@ help_overrides = {
     "cw-skimmer": (
         "<p><b>CW allocations:</b> Lists active CW slices and links to the structured receiver "
         "editor for slice changes.</p>"
+        "<p><b>Decoder settings:</b> Sets the CW search range, channel count and starting "
+        "speed for every CW slice without its own settings table. Saving restarts the "
+        "receivers that use CW.</p>"
         "<p><b>Recent results:</b> Shows up to 200 stored CW decoder results, newest first. "
         "Filter by receiver, pause refresh, or download the current rows as CSV.</p>"
     ),
     "rtty-skimmer": (
         "<p><b>RTTY allocations:</b> Lists active RTTY slices and links to the structured "
         "receiver editor for slice changes.</p>"
+        "<p><b>Decoder settings:</b> Sets shift, baud rate, tone reversal, channel count and "
+        "detection threshold. Saving restarts the receivers that use RTTY.</p>"
         "<p><b>Recent results:</b> Shows up to 200 stored RTTY decoder results, newest first. "
         "Filter by receiver, pause refresh, or download the current rows as CSV.</p>"
     ),
     "digital-decoders": (
         "<p><b>Digital allocations:</b> Lists active FT8, FT4 and WSPR slices and links to the "
         "structured receiver editor for slice changes.</p>"
+        "<p><b>Decoder settings:</b> Each installed FT8, FT4 and WSPR decoder lists the settings "
+        "it declares. Saving restarts the receivers that use the mode.</p>"
         "<p><b>Recent results:</b> Shows up to 200 stored results, newest first. Filter by "
         "receiver and digital mode, pause refresh, or download the matching rows as CSV.</p>"
         "<p><b>Reporting:</b> Public reporting services are configured in Station Settings. "

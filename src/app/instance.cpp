@@ -8,6 +8,7 @@
 #include "app/config.h"
 #include "app/slice_tuning.h"
 #include "decoder/session.h"
+#include "decoder/settings.h"
 #include "receiver/receiver.h"
 
 namespace skim {
@@ -49,7 +50,7 @@ std::unique_ptr<SmSlotDecoderSession> SmSlotDecoder::Start(
     const SmDecoderRoute& route) const {
   return std::make_unique<SmSlotDecoderSession>(
       ModeName(mode()), SmDecoderRoute{id(), route.result_endpoint, route.stop},
-      input_sample_rate(), input_sample_type());
+      input_sample_rate(), input_sample_type(), options());
 }
 
 SmSlice::SmSlice(const SmReceiver& receiver, const Json& settings,
@@ -88,8 +89,26 @@ bool SmSlice::fits(int64_t receiver_center) const {
          receiver().rate();
 }
 
+const Json& SmSlice::decoder_settings() const {
+  if (const auto found = settings_.find("settings"); found != settings_.end())
+    return *found;
+  return receiver().instance().decoder_settings(mode());
+}
+
+SmSettingValues SmDecoder::options() const {
+  return ResolveDecoderSettings(ModeName(mode()), slice().decoder_settings());
+}
+
+const Json& SmInstance::decoder_settings(SmMode mode) const {
+  static const Json empty = Json::object();
+  const auto found = decoders_.find(ModeName(mode));
+  return found != decoders_.end() ? *found : empty;
+}
+
 Json SmSlice::WorkerPlan() const {
   auto plan = settings_;
+  if (const auto& decoders = decoder_settings(); !decoders.empty())
+    plan["settings"] = decoders;
   plan["slice_id"] = id();
   plan["decoder_id"] = decoder().id();
   plan["receiver_id"] = receiver().id();
@@ -156,6 +175,7 @@ std::shared_ptr<const SmInstance> SmInstance::FromSettings(
     const SmInstanceSettings& settings) {
   const auto& topology = settings.topology;
   auto graph = std::shared_ptr<SmInstance>(new SmInstance);
+  graph->decoders_ = topology.value("decoders", Json::object());
   for (const auto& configured : topology.at("receivers")) {
     auto& receiver = graph->AddReceiver(configured);
     // Legacy configurations can be viewed before the supervisor persists IDs.

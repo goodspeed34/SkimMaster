@@ -244,6 +244,24 @@
   {% if allocation_empty %}<tr><td colspan="5">No active slices for this mode.</td></tr>{% endif %}
 </table>
 </div>
+{% if settings_notice != "" %}<p class="notice notice-ok" role="status">{{ settings_notice }}</p>{% endif %}
+{% for decoder in decoder_settings %}
+<form method="post" action="/decoder-settings">
+<input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="revision" value="{{ revision }}"><input type="hidden" name="mode" value="{{ decoder.mode }}">
+<div class="table-scroll">
+<table class="cfg-table">
+  <tr><th colspan="3">{{ decoder.mode }} Decoder Settings</th></tr>
+  {% if decoder.unavailable != "" %}<tr><td colspan="3">Unavailable: {{ decoder.unavailable }}</td></tr>{% else %}
+  <tr><th>Setting</th><th>Value</th><th>Description</th></tr>
+  {% for field in decoder.fields %}
+  <tr><td class="label-col">{{ field.label }}</td><td>{% if field.kind == "boolean" %}<input type="checkbox" name="{{ field.key }}"{% if field.checked %} checked{% endif %}>{% else if field.kind == "choice" %}<select name="{{ field.key }}">{% for choice in field.choices %}<option value="{{ choice.value }}"{% if choice.selected %} selected{% endif %}>{{ choice.value }}</option>{% endfor %}</select>{% else %}<input class="mono" type="number" name="{{ field.key }}" value="{{ field.value }}" min="{{ field.min }}" max="{{ field.max }}" step="{% if field.kind == "integer" %}1{% else %}any{% endif %}" required>{% endif %}</td><td>{{ field.help }} Default: <span class="mono">{{ field.default }}</span>.</td></tr>
+  {% endfor %}
+  <tr><td colspan="3"><button class="btn-native">Save {{ decoder.mode }} Settings</button> Applies to every {{ decoder.mode }} slice without its own <span class="mono">settings</span> table and restarts the receivers that use it.</td></tr>
+  {% endif %}
+</table>
+</div>
+</form>
+{% endfor %}
 <form method="get" action="/{{ page }}" class="action-bar">
   <label>Receiver <select name="receiver"><option value=""{% if selected_receiver == "" %} selected{% endif %}>All receivers</option>{% for source in allocation_sources %}<option value="{{ source }}"{% if selected_receiver == source %} selected{% endif %}>{{ source }}</option>{% endfor %}</select></label>
   {% if decoder_mode_filter %}<label>Mode <select name="mode"><option value=""{% if selected_mode == "" %} selected{% endif %}>All digital modes</option><option value="FT8"{% if selected_mode == "FT8" %} selected{% endif %}>FT8</option><option value="FT4"{% if selected_mode == "FT4" %} selected{% endif %}>FT4</option><option value="WSPR"{% if selected_mode == "WSPR" %} selected{% endif %}>WSPR</option></select></label>{% endif %}

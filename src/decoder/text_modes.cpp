@@ -15,13 +15,31 @@
 
 namespace skim {
 namespace {
-// ITA2 asynchronous 45.45 baud, least-significant data bit first.
+constexpr double kPi = 3.141592653589793;
+constexpr int kRttyRate = 12000;
+
+struct SmRttyOptions {
+  double shift_hz;
+  double baud;
+  bool reverse;
+  size_t max_channels;
+  float threshold;
+};
+
+// ITA2 asynchronous, least-significant data bit first. The space tone sits
+// shift_hz below the mark tone; reverse swaps them.
 class SmRtty {
  public:
-  explicit SmRtty(double mark) {
+  SmRtty(double mark, const SmRttyOptions& options)
+      : bit_(kRttyRate / options.baud),
+        reverse_(options.reverse),
+        history_{std::vector<std::complex<double>>(
+                     std::max<size_t>(1, std::lround(bit_ / 2))),
+                 std::vector<std::complex<double>>(
+                     std::max<size_t>(1, std::lround(bit_ / 2)))} {
     rotation_[0] =
-        std::polar(1., -2 * 3.141592653589793 * (mark - 170) / 12000);
-    rotation_[1] = std::polar(1., -2 * 3.141592653589793 * mark / 12000);
+        std::polar(1., -2 * kPi * (mark - options.shift_hz) / kRttyRate);
+    rotation_[1] = std::polar(1., -2 * kPi * mark / kRttyRate);
   }
   template <class Emit>
   void Process(std::complex<float> iq, Emit emit) {
@@ -33,7 +51,7 @@ class SmRtty {
       osc_[c] *= rotation_[c];
     }
     head_ = (head_ + 1) % history_[0].size();
-    bool mark = std::norm(sums_[1]) > std::norm(sums_[0]);
+    bool mark = (std::norm(sums_[1]) > std::norm(sums_[0])) != reverse_;
     if (next_ < 0) {
       if (last_mark_ && !mark) {
         next_ = 1.5 * bit_;
@@ -70,13 +88,15 @@ class SmRtty {
     }
     if (c >= 32 && c <= 126) line_ += c;
   }
-  static constexpr double bit_ = 12000.0 / 45.45;
+  const double bit_;
+  const bool reverse_;
   int bits_ = 0, code_ = 0;
   size_t head_ = 0;
   bool last_mark_ = false, figures_ = false;
   double next_ = -1;
   std::array<std::complex<double>, 2> sums_{}, osc_{{1, 1}}, rotation_{};
-  std::array<std::array<std::complex<double>, 132>, 2> history_{};
+  // A half bit of each tone for the sliding correlator.
+  std::array<std::vector<std::complex<double>>, 2> history_;
   std::string line_;
 };
 
@@ -84,7 +104,7 @@ class SmRtty {
 // channel. Replay the acquisition window into each newly detected channel.
 class SmRttyBank {
  public:
-  SmRttyBank() {
+  explicit SmRttyBank(const SmRttyOptions& options) : options_(options) {
     Reset();
     std::lock_guard<std::mutex> lock(FftPlannerMutex());
     plan_ = fftwf_plan_dft_1d(kBins,
@@ -94,7 +114,7 @@ class SmRttyBank {
     if (!plan_)
       throw std::runtime_error("cannot initialize RTTY spectral search");
     for (int i = 0; i < kBins; ++i)
-      window_[i] = .5f - .5f * std::cos(2 * 3.141592653589793 * i / kBins);
+      window_[i] = .5f - .5f * std::cos(2 * kPi * i / kBins);
   }
   ~SmRttyBank() {
     std::lock_guard<std::mutex> lock(FftPlannerMutex());
@@ -122,10 +142,11 @@ class SmRttyBank {
     auto sorted = power_;
     std::nth_element(sorted.begin(), sorted.begin() + kBins / 2, sorted.end());
     float threshold =
-        std::max({1e-8f, sorted[kBins / 2] * 32,
+        std::max({1e-8f, sorted[kBins / 2] * options_.threshold,
                   *std::max_element(power_.begin(), power_.end()) * .001f});
     std::vector<std::pair<float, int>> peaks;
-    constexpr int shift = 29;  // 170 Hz at 12000/2048 Hz per bin
+    const int shift =
+        static_cast<int>(std::lround(options_.shift_hz * kBins / kRttyRate));
     for (int i = shift + 1; i < kBins - 1; ++i) {
       if (power_[i] < power_[i - 1] || power_[i] < power_[i + 1]) continue;
       // Require a peak at both tones. Allow one bin for FFT rounding.
@@ -136,21 +157,22 @@ class SmRttyBank {
       float score = std::min(power_[i], space_power);
       if (score > threshold)
         peaks.push_back(
-            {score, std::lround((i - kBins / 2) * 12000.0 / kBins)});
+            {score, std::lround((i - kBins / 2) * double(kRttyRate) / kBins)});
     }
     std::sort(peaks.rbegin(), peaks.rend());
     for (auto& age : age_) ++age.second;
     // Nearby peaks can demodulate the same signal through the half-bit
-    // correlator. Reuse the strongest channel within its first null (91 Hz).
-    constexpr int separation = 91;
+    // correlator. Reuse the strongest channel within its first null, at
+    // twice the baud rate (91 Hz at 45.45 baud).
+    const int separation = static_cast<int>(std::lround(2 * options_.baud));
     for (auto [score, hz] : peaks) {
       auto near = channels_.lower_bound(hz - separation);
       if (near != channels_.end() && near->first <= hz + separation) {
         age_[near->first] = 0;
         continue;
       }
-      if (channels_.size() >= 16) continue;
-      auto [channel, added] = channels_.try_emplace(hz, hz);
+      if (channels_.size() >= options_.max_channels) continue;
+      auto [channel, added] = channels_.try_emplace(hz, hz, options_);
       if (!added) continue;
       for (const auto& sample : acquisition_)
         channel->second.Process(
@@ -169,6 +191,7 @@ class SmRttyBank {
 
  private:
   static constexpr int kBins = 2048;
+  const SmRttyOptions options_;
   fftwf_plan plan_{};
   int fill_ = 0, frames_ = 0;
   std::array<float, kBins> window_{}, power_{};
@@ -180,12 +203,16 @@ class SmRttyBank {
 
 class SmMorse {
  public:
-  SmMorse() {
+  explicit SmMorse(const SmSettingValues& options) {
     morsedec_config config;
     md_config_init(&config);
     config.sample_rate = 48000;
-    config.min_frequency = -23000;
-    config.max_frequency = 23000;
+    config.min_frequency = static_cast<float>(options.at("low_hz"));
+    config.max_frequency = static_cast<float>(options.at("high_hz"));
+    if (config.min_frequency >= config.max_frequency)
+      throw std::runtime_error("CW low_hz must be below high_hz");
+    config.max_channels = static_cast<size_t>(options.at("max_channels"));
+    config.initial_wpm = static_cast<float>(options.at("initial_wpm"));
     std::lock_guard<std::mutex> lock(FftPlannerMutex());
     decoder_.reset(md_new_iq_with_threads(&config, 1));
     if (!decoder_) throw std::runtime_error("CW decoder initialization failed");
@@ -238,13 +265,64 @@ class SmMorse {
   std::map<uint64_t, uint64_t> last_;
 };
 }  // namespace
-void DecodeText(bool cw, const IqStream& stream, const TextSpot& on_spot,
-                const std::function<void()>& gap) {
+
+const std::vector<SmSetting>& TextDecoderSettings(bool cw) {
+  using Kind = SmSettingKind;
+  static const std::vector<SmSetting> morse{
+      {"low_hz", "Lowest offset (Hz)",
+       "Lower edge of the CW search, relative to the slice center.",
+       Kind::Integer, -23000, -24000, 23999},
+      {"high_hz", "Highest offset (Hz)",
+       "Upper edge of the CW search, relative to the slice center.",
+       Kind::Integer, 23000, -23999, 24000},
+      {"max_channels", "Channels", "Signals tracked at once across the slice.",
+       Kind::Integer, 32, 1, 256},
+      {"initial_wpm", "Initial speed (WPM)",
+       "Starting speed estimate for new signals. 0 uses the decoder default "
+       "of about 23 WPM.",
+       Kind::Integer, 0, 0, 60},
+  };
+  static const std::vector<SmSetting> rtty{
+      {"shift_hz",
+       "Shift (Hz)",
+       "Spacing between the mark and space tones.",
+       Kind::Choice,
+       170,
+       0,
+       0,
+       {85, 170, 425, 850}},
+      {"baud",
+       "Baud rate",
+       "ITA2 symbol rate.",
+       Kind::Choice,
+       45.45,
+       0,
+       0,
+       {45.45, 50, 75}},
+      {"reverse", "Reverse", "Swap the mark and space tones.", Kind::Boolean, 0,
+       0, 1},
+      {"max_channels", "Channels", "Signals decoded at once across the slice.",
+       Kind::Integer, 16, 1, 64},
+      {"threshold", "Detection threshold",
+       "Tone pair power over the median spectrum needed to open a channel. "
+       "Lower values find weaker signals and more false channels.",
+       Kind::Decimal, 32, 4, 256},
+  };
+  return cw ? morse : rtty;
+}
+
+void DecodeText(bool cw, const SmSettingValues& options, const IqStream& stream,
+                const TextSpot& on_spot, const std::function<void()>& gap) {
   uint64_t index = 0;
   std::unique_ptr<SmMorse> morse;
-  if (cw) morse = std::make_unique<SmMorse>();
+  if (cw) morse = std::make_unique<SmMorse>(options);
   std::unique_ptr<SmRttyBank> rtty;
-  if (!cw) rtty = std::make_unique<SmRttyBank>();
+  const double baud = cw ? 0 : options.at("baud");
+  if (!cw)
+    rtty = std::make_unique<SmRttyBank>(
+        SmRttyOptions{options.at("shift_hz"), baud, options.at("reverse") != 0,
+                      static_cast<size_t>(options.at("max_channels")),
+                      static_cast<float>(options.at("threshold"))});
   stream(
       [&](const std::complex<float>* buf, size_t count) {
         auto emit = [&](std::string text, int64_t offset, std::string call,
@@ -266,7 +344,7 @@ void DecodeText(bool cw, const IqStream& stream, const TextSpot& on_spot,
                   R"(\b(?:CQ|DE) +([A-Z0-9/]*[0-9][A-Z]+)\b)");
               std::smatch match;
               bool identified = std::regex_search(line, match, cq);
-              if (identified) emit(line, mark, match[1].str(), {}, 45.45);
+              if (identified) emit(line, mark, match[1].str(), {}, baud);
             });
           }
       },

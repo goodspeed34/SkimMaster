@@ -19,6 +19,7 @@
 #include "core/bands.h"
 #include "core/process_usage.h"
 #include "core/schema.h"
+#include "decoder/settings.h"
 #include "web/common.h"
 
 namespace {
@@ -374,6 +375,66 @@ void TestBandsAndUsage() {
 }
 }  // namespace
 
+void TestDecoderSettings() {
+  auto cw = skim::ResolveDecoderSettings("CW", nullptr);
+  ExpectEqual<double>(cw.at("max_channels"), 32, "CW defaults fill in");
+  auto rtty = skim::ResolveDecoderSettings(
+      "RTTY", {{"shift_hz", 850}, {"baud", 50}, {"reverse", true}});
+  ExpectEqual<double>(rtty.at("shift_hz"), 850, "RTTY shift is configurable");
+  ExpectEqual<double>(rtty.at("reverse"), 1, "booleans resolve to 1");
+  ExpectEqual<double>(rtty.at("max_channels"), 16, "unset keys keep defaults");
+  ExpectThrows(
+      [] { skim::ResolveDecoderSettings("RTTY", {{"shift_hz", 200}}); },
+      "a shift outside the choices is rejected");
+  ExpectThrows(
+      [] { skim::ResolveDecoderSettings("CW", {{"max_channels", 2.5}}); },
+      "integer settings reject fractions");
+  ExpectThrows([] { skim::ResolveDecoderSettings("CW", {{"wpm", 20}}); },
+               "unknown setting keys are rejected");
+  ExpectThrows([] { skim::ResolveDecoderSettings("RTTY", {{"reverse", 1}}); },
+               "booleans must be TOML booleans");
+  ExpectThrows([] { skim::ResolveDecoderSettings("SSTV", {{"x", 1}}); },
+               "SSTV declares no settings");
+
+  auto receiver = Json{{"receiver", "hf"},
+                       {"device", "rtltcp:127.0.0.1:1234"},
+                       {"rate", 192000},
+                       {"center_hz", 7030000},
+                       {"slices", Json::array({{{"mode", "CW"}}})}};
+  auto station = Json{{"receivers", Json::array({receiver})},
+                      {"decoders", {{"CW", {{"max_channels", 8}}}}}};
+  skim::ValidateStation(station);
+  skim::SmInstanceSettings settings{};
+  settings.topology = station;
+  settings.topology["services"] = Json::object();
+  auto plans = SmInstance::FromSettings(settings)->WorkerPlans(
+      "db.sqlite", "gallery", ".", 0, kMonday, Json::object());
+  const auto& slice = plans.at("hf").at("slices").at(0);
+  ExpectEqual<double>(slice.at("settings").at("max_channels"), 8,
+                      "station decoder settings reach the worker plan");
+  auto worker = SmInstance::FromReceiverPlan(plans.at("hf"));
+  ExpectEqual<double>(
+      worker->receivers().front()->slices().front()->decoder().options().at(
+          "max_channels"),
+      8, "workers resolve decoder settings from their plan");
+
+  station["receivers"][0]["slices"][0]["settings"] = {{"max_channels", 4}};
+  settings.topology = station;
+  settings.topology["services"] = Json::object();
+  plans = SmInstance::FromSettings(settings)->WorkerPlans(
+      "db.sqlite", "gallery", ".", 0, kMonday, Json::object());
+  ExpectEqual<double>(
+      plans.at("hf").at("slices").at(0).at("settings").at("max_channels"), 4,
+      "slice settings override the station table");
+
+  station["decoders"] = {{"CW", {{"max_channels", 0}}}};
+  ExpectThrows([&] { skim::ValidateStation(station); },
+               "out-of-range station decoder settings are rejected");
+  station["decoders"] = {{"AM", Json::object()}};
+  ExpectThrows([&] { skim::ValidateStation(station); },
+               "unknown decoder tables are rejected");
+}
+
 int main() {
   const std::pair<const char*, void (*)()> tests[] = {
       {"schedule windows", TestScheduleWindows},
@@ -384,6 +445,7 @@ int main() {
       {"web helpers", TestWebHelpers},
       {"schema", TestSchema},
       {"bands and usage", TestBandsAndUsage},
+      {"decoder settings", TestDecoderSettings},
   };
   for (const auto& [name, test] : tests) {
     try {

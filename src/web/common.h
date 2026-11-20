@@ -141,5 +141,9 @@ void RegisterServiceRoutes(httplib::Server& server, SmWebContext& ctx);
 void RegisterAdminRoutes(httplib::Server& server, SmWebContext& ctx);
 void RegisterGalleryRoutes(httplib::Server& server, SmWebContext& ctx);
 void RegisterPageRoutes(httplib::Server& server, SmWebContext& ctx);
+void RegisterDecoderRoutes(httplib::Server& server, SmWebContext& ctx);
+// Adds the decoder settings forms for a decoder page slug to model.
+void AddDecoderSettings(const std::string& slug,
+                        const SmInstanceSettings& settings, Json& model);
 }  // namespace web
 }  // namespace skim

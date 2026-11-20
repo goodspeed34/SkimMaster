@@ -6,6 +6,32 @@ ABIs are versioned separately by their exported symbol names.
 
 ## [Unreleased]
 
+### Added
+
+- Per-mode decoder settings in `[decoders.<MODE>]` and per-slice `settings`
+  tables, edited from the CW, RTTY and digital decoder pages: CW search range,
+  channels and initial speed; RTTY shift, baud, reverse, channels and
+  threshold; FT8/FT4 search range, candidates, sync score and LDPC
+  iterations; WSPR passes and subtraction. Changes restart only the receiver
+  workers that use the mode.
+- Panel restore of an uploaded snapshot, a redacted diagnostics bundle and a
+  confirmed factory reset. Each change is staged and applied by an in-process
+  station restart that keeps a snapshot of the previous data.
+- **Restart station** on Restart Daemon, applying listener and data path
+  changes without restarting the server process.
+- Worker kind, lifecycle state, PID, restarts, CPU and memory in the System
+  Summary, along with active bands.
+- Versioned station schema (`PRAGMA user_version`) with migrations on open.
+- CI format check and AddressSanitizer/UBSan and ThreadSanitizer runs.
+
+### Changed
+
+- Slot decoder plugin ABI v3: `skim_slot_decoder_v3` replaces
+  `skim_slot_decoder_v2`. Metadata declares settings, and `start` and the
+  `SmBuiltinSlotDecoder` callback receive resolved values. Rebuild external
+  decoders against the new SDK.
+- Unhandled panel request errors are logged to stderr with their path.
+
 ## [0.1.0] - 2026-11-20
 
 First tagged baseline.

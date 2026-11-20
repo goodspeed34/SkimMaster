@@ -12,7 +12,8 @@ extern "C" {
 namespace skim {
 namespace {
 std::vector<SmSpot> DecodeWspr(SmSlotMode, const std::vector<float>& audio,
-                               std::mutex& fft_planner) {
+                               std::mutex& fft_planner,
+                               const SmSettingValues& settings) {
   std::lock_guard<std::mutex> lock(fft_planner);
   if (audio.size() != 1440000) throw std::runtime_error("incomplete slot");
   // Translate the WSPR USB passband (dial + 1500 Hz) and decimate to 375 Hz.
@@ -38,8 +39,8 @@ std::vector<SmSpot> DecodeWspr(SmSlotMode, const std::vector<float>& audio,
   }
   if (!std::isfinite(energy) || energy <= 0) return {};
   decoder_options options{};
-  options.npasses = 2;
-  options.subtraction = 1;
+  options.npasses = static_cast<int>(settings.at("passes"));
+  options.subtraction = settings.at("subtraction") != 0;
   std::array<decoder_results, MAX_UNIQUES> decoded{};
   int count = 0;
   if (wspr_decode(re.data(), im.data(), n, options, decoded.data(), &count))
@@ -61,12 +62,24 @@ std::vector<SmSpot> DecodeWspr(SmSlotMode, const std::vector<float>& audio,
 }  // namespace skim
 
 extern "C" SKIM_PLUGIN_EXPORT const skim::SmSlotDecoderPlugin*
-skim_slot_decoder_v2(skim::SmSlotMode mode) {
+skim_slot_decoder_v3(skim::SmSlotMode mode) {
   using namespace skim;
   static const SmBuiltinSlotDecoder wspr(
-      {"WSPR", SKIM_VERSION, "Guenael Jouchet (rtlsdr-wsprd)",
-       "https://github.com/Guenael/rtlsdr-wsprd", SmSlotMode::Wspr, 12000,
-       12000, SmSampleType::MonoAudio},
+      {"WSPR",
+       SKIM_VERSION,
+       "Guenael Jouchet (rtlsdr-wsprd)",
+       "https://github.com/Guenael/rtlsdr-wsprd",
+       SmSlotMode::Wspr,
+       12000,
+       12000,
+       SmSampleType::MonoAudio,
+       {{"passes", "Decoding passes",
+         "Each pass after the first decodes signals hidden under stronger "
+         "ones.",
+         SmSettingKind::Integer, 2, 1, 3},
+        {"subtraction", "Signal subtraction",
+         "Subtract decoded signals before the next pass.",
+         SmSettingKind::Boolean, 1, 0, 1}}},
       DecodeWspr);
   return mode == SmSlotMode::Wspr ? &wspr : nullptr;
 }

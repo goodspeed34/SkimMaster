@@ -7,6 +7,7 @@
 #include <utility>
 
 #include "decoder/session.h"
+#include "decoder/settings.h"
 
 namespace skim {
 int SlotSamples(const std::string& mode) {
@@ -32,7 +33,8 @@ std::vector<SmSpot> DecodeSlot(const std::string& mode, const char* path,
   CollectDecoderResults(
       [&](const std::string& endpoint, const std::atomic_bool& stop) {
         SmSlotDecoderSession session(mode, {"file", endpoint, stop}, 12000,
-                                     SmSampleType::MonoAudio);
+                                     SmSampleType::MonoAudio,
+                                     ResolveDecoderSettings(mode, nullptr));
         session.Submit({utc_ms, std::move(audio)}, true);
         session.Finish();
       },

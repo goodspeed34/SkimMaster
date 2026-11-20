@@ -61,6 +61,7 @@ void Serve(const char* config, const char* address, int port,
   web::RegisterScheduleRoutes(server, ctx);
   web::RegisterServiceRoutes(server, ctx);
   web::RegisterAdminRoutes(server, ctx);
+  web::RegisterDecoderRoutes(server, ctx);
   server.Get(R"(/data/(spectrum|map))", [&](const httplib::Request& req,
                                             httplib::Response& res) {
     Json rows;
@@ -100,6 +101,21 @@ void Serve(const char* config, const char* address, int port,
   const auto endpoint =
       (host.find(':') == std::string::npos ? host : "[" + host + "]") + ":" +
       std::to_string(port);
+  server.set_exception_handler([](const httplib::Request& req,
+                                  httplib::Response& res,
+                                  std::exception_ptr error) {
+    std::string message = "unknown error";
+    try {
+      std::rethrow_exception(error);
+    } catch (const std::exception& e) {
+      message = e.what();
+    } catch (...) {
+    }
+    std::cerr << "[web] " << req.method << ' ' << req.path
+              << " failed: " << message << '\n';
+    res.status = 500;
+    res.set_content("Internal error: " + message, "text/plain; charset=utf-8");
+  });
   if (!server.bind_to_port(host, port))
     throw std::runtime_error("could not bind HTTP listener on " + endpoint);
   std::cerr << "[web] Listening on http://" + endpoint + "\n";

@@ -11,6 +11,7 @@
 #include <variant>
 #include <vector>
 
+#include "core/settings.h"
 #include "core/types.h"
 
 namespace skim {
@@ -26,6 +27,8 @@ struct SmSlotDecoderMetadata {
   long long min_samplerate;
   long long max_samplerate;
   SmSampleType required_type;
+  // Settings the operator can change in [decoders.<MODE>].
+  std::vector<SmSetting> settings;
 };
 
 struct SmDecoderSlot {
@@ -40,10 +43,12 @@ class SmSlotDecoderPlugin {
  public:
   virtual ~SmSlotDecoderPlugin() = default;
   virtual const SmSlotDecoderMetadata& metadata() const noexcept = 0;
+  // options holds a value for every declared setting.
   virtual std::future<void> start(std::string decoder_id, DecoderInput& input,
                                   std::string result_endpoint,
                                   const std::atomic_bool& stop,
-                                  std::mutex& fft_planner) const = 0;
+                                  std::mutex& fft_planner,
+                                  SmSettingValues options) const = 0;
 };
 
 struct SmDecoderResult {

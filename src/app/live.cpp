@@ -24,16 +24,16 @@ int64_t UtcMilliseconds() {
       .count();
 }
 
-void ReceiveText(const std::string& mode, const char* device, int64_t center,
-                 const char* receiver, const char* database, int64_t first_ms,
-                 const IqReader& read) {
+void ReceiveText(const std::string& mode, const SmSettingValues& options,
+                 const char* device, int64_t center, const char* receiver,
+                 const char* database, int64_t first_ms, const IqReader& read) {
   const bool cw = mode == "CW";
   const int rate = cw ? 48000 : 12000;
   const bool live = !IsReplayReceiver(device);
   if (!live && first_ms < 0) first_ms = 0;
   int64_t origin = first_ms;
   DecodeText(
-      cw,
+      cw, options,
       [&](const Samples& samples, const std::function<void()>& gap) {
         read(
             device, center, rate,
@@ -103,8 +103,8 @@ void ReceiveSlice(const SmSlice& slice, int64_t dial, const char* database,
   const auto* device = receiver.device().c_str();
   const auto* mode = ModeName(slice.mode());
   if (slice.mode() == SmMode::Cw || slice.mode() == SmMode::Rtty)
-    return ReceiveText(mode, device, dial, receiver.id().c_str(), database,
-                       first_ms, read);
+    return ReceiveText(mode, slice.decoder().options(), device, dial,
+                       receiver.id().c_str(), database, first_ms, read);
 
   const auto* slot_decoder = slice.decoder().slot_decoder();
   if (!slot_decoder) throw std::runtime_error("expected a slot decoder");

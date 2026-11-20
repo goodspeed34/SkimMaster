@@ -23,6 +23,7 @@
 #include "core/database.h"
 #include "core/process_usage.h"
 #include "core/schema.h"
+#include "decoder/settings.h"
 #include "receiver/receiver.h"
 #include "report/cluster.h"
 #include "report/reporting.h"
@@ -131,6 +132,16 @@ void Validate(const Json& cfg) {
         throw std::runtime_error("invalid service port");
     }
   }
+  const auto decoders = cfg.value("decoders", Json::object());
+  if (!decoders.is_object())
+    throw std::runtime_error("decoders must be a table of modes");
+  for (auto it = decoders.begin(); it != decoders.end(); ++it) {
+    const auto& mode = it.key();
+    if (mode != "CW" && mode != "RTTY" && mode != "FT8" && mode != "FT4" &&
+        mode != "WSPR" && mode != "SSTV")
+      throw std::runtime_error("unknown decoder mode in decoders: " + mode);
+    ResolveDecoderSettings(mode, it.value());
+  }
   for (const auto& r : cfg.at("receivers")) {
     if (r.contains("enabled") && !r.at("enabled").is_boolean())
       throw std::runtime_error("receiver enabled must be a boolean");
@@ -178,6 +189,8 @@ void Validate(const Json& cfg) {
         bool timed = IsTimedDecoder(mode);
         if (!timed && !skimmer && mode != "SSTV")
           throw std::runtime_error("invalid decoder mode");
+        if (slice.contains("settings"))
+          ResolveDecoderSettings(mode, slice.at("settings"));
         auto frequency = SliceReference(slice, mode, center);
         if (frequency <= 0 || frequency > 1000000000000LL)
           throw std::runtime_error(skimmer ? "invalid slice center"

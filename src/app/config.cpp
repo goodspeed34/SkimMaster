@@ -18,6 +18,7 @@
 
 #include "app/slice_tuning.h"
 #include "app/station.h"
+#include "decoder/settings.h"
 #include "receiver/receiver.h"
 
 namespace skim {
@@ -186,7 +187,7 @@ SmInstanceSettings Parse(const fs::path& file, std::string source) {
     const auto& key = it.key();
     if (key != "listen_address" && key != "port" && key != "first_run_wizard" &&
         key != "database" && key != "gallery" && key != "station" &&
-        key != "receivers" && key != "services")
+        key != "receivers" && key != "services" && key != "decoders")
       throw std::runtime_error("unknown TOML setting: " + key);
   }
   if (data.contains("port") && !data["port"].is_number_integer())
@@ -202,7 +203,8 @@ SmInstanceSettings Parse(const fs::path& file, std::string source) {
     return (file.parent_path() / value).lexically_normal().string();
   };
   auto topology = Json{{"receivers", data.value("receivers", Json::array())},
-                       {"services", data.value("services", Json::object())}};
+                       {"services", data.value("services", Json::object())},
+                       {"decoders", data.value("decoders", Json::object())}};
   auto service_options = data.value("services", Json::object());
   std::optional<SmStationIdentity> identity;
   if (data.contains("station")) {
@@ -286,7 +288,8 @@ std::string RedactedSettings(const std::string& source) {
 nlohmann::json RedactedJson(nlohmann::json value) {
   if (value.is_object()) {
     for (auto it = value.begin(); it != value.end(); ++it)
-      if (IsPrivateSetting(it.key()) && it->is_string())
+      // Worker plans carry no schedule names, so name is always personal.
+      if ((IsPrivateSetting(it.key()) || it.key() == "name") && it->is_string())
         *it = "<redacted>";
       else
         *it = RedactedJson(std::move(*it));
@@ -511,6 +514,41 @@ void UpdateSchedule(const fs::path& file, const std::string& expected,
     schedules->erase(schedules->cbegin() + *index);
     if (schedules->empty()) entry.erase("schedules");
   }
+  SaveTable(file, table, expected);
+}
+
+void UpdateDecoderSettings(const fs::path& file, const std::string& expected,
+                           const std::string& mode,
+                           const SmSettingValues& values) {
+  const auto& schema = DecoderSettings(mode);
+  const auto current = LoadSettings(file);
+  if (current.revision != expected)
+    throw std::runtime_error("configuration changed; reload and retry");
+  auto table = toml::parse(current.source);
+  if (!table.contains("decoders")) table.insert("decoders", toml::table{});
+  auto* decoders = table["decoders"].as_table();
+  if (!decoders) throw std::runtime_error("decoders must be a table");
+  toml::table options;
+  for (const auto& setting : schema) {
+    const auto found = values.find(setting.key);
+    if (found == values.end())
+      throw std::runtime_error("missing decoder setting " + setting.key);
+    const double value = found->second;
+    if (!SettingAccepts(setting, value))
+      throw std::runtime_error(setting.label + " is out of range");
+    if (value == setting.default_value) continue;
+    if (setting.kind == SmSettingKind::Boolean)
+      options.insert(setting.key, value != 0);
+    else if (value == std::floor(value) && std::abs(value) < 1e15)
+      options.insert(setting.key, static_cast<int64_t>(value));
+    else
+      options.insert(setting.key, value);
+  }
+  if (options.empty())
+    decoders->erase(mode);
+  else
+    decoders->insert_or_assign(mode, std::move(options));
+  if (decoders->empty()) table.erase("decoders");
   SaveTable(file, table, expected);
 }
 

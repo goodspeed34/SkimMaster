@@ -64,6 +64,29 @@ Use a capture rate supported by the source. Skim Master resamples to the slice r
 
 CW and RTTY search the configured slice for signals. By default, the slice inherits the IQ source's RF center. Use an optional `center_hz` inside the slice to offset it within the capture bandwidth. Existing CW and RTTY configurations with `dial_hz` use that value as the slice center when `center_hz` is omitted.
 
+### Decoder settings
+
+The CW, RTTY and digital decoder pages edit per-mode settings. Each page saves a `[decoders.<MODE>]` table, keeping only values that differ from the defaults. A slice can override them with its own `settings` table. Saving restarts only the receiver workers that use the mode.
+
+| Mode | Settings |
+|---|---|
+| CW | `low_hz`, `high_hz` (search edges relative to the slice center), `max_channels`, `initial_wpm` |
+| RTTY | `shift_hz` (85, 170, 425 or 850), `baud` (45.45, 50 or 75), `reverse`, `max_channels`, `threshold` |
+| FT8, FT4 | `min_hz`, `max_hz` (audio search edges above the dial), `max_candidates`, `min_score`, `ldpc_iterations` |
+| WSPR | `passes` (1–3), `subtraction` |
+
+```toml
+[decoders.RTTY]
+shift_hz = 850
+reverse = true
+
+[[receivers.slices]]
+mode = "CW"
+settings = { max_channels = 8 }
+```
+
+Unknown keys and out-of-range values are rejected when the TOML is saved.
+
 A receiver with a top-level `slices` array reserves its tuning for manual allocation. **Band Schedules** adds, edits, duplicates and deletes schedules. It also runs a schedule immediately for 30 minutes with **Run Now**. **Clear Override** restores normal allocation immediately. Automatic schedules can run on receivers that have no manual allocation. Each schedule has `start_minute`, `end_minute`, `priority` and `center_hz`, with optional `name`, `enabled`, `days` and `slices` fields. Minutes count from UTC midnight. Equal start and end cover the full day. An overnight window continues into the day after its start. The `days` mask uses bit 0 for Monday through bit 6 for Sunday and defaults to all seven days. Schedules are enabled by default. Lower priority numbers win, with ties resolved by list order.
 
 ## Manage IQ sources
@@ -124,7 +147,7 @@ The equivalent `[services.cluster]`, `[services.psk]`, `[services.wsprnet]` and 
 
 ## Building an external plugin
 
-Meson installs the C++17 plugin SDK under `include/skimmaster`. Add that directory to your plugin's include path and build a shared module with the same C++ toolchain as the host. A receiver includes `receiver/plugin_api.h`, exports `skim_receiver_v2` and `skim_receiver_descriptor_v2`, and uses a filename starting with `librcvr`. A slot decoder includes `decoder/api.h` and can use the worker in `decoder/slot_plugin.h` with NNG and nlohmann-json. It exports `skim_slot_decoder_v2` and uses a filename starting with `libdecoder`.
+Meson installs the C++17 plugin SDK under `include/skimmaster`. Add that directory to your plugin's include path and build a shared module with the same C++ toolchain as the host. A receiver includes `receiver/plugin_api.h`, exports `skim_receiver_v2` and `skim_receiver_descriptor_v2`, and uses a filename starting with `librcvr`. A slot decoder includes `decoder/api.h` and can use the worker in `decoder/slot_plugin.h` with NNG and nlohmann-json. It exports `skim_slot_decoder_v3` and uses a filename starting with `libdecoder`. Its metadata lists the settings the operator can change; the host validates `[decoders.<MODE>]` against them, shows them on the decoder page and passes the resolved values to `start` and the decode callback.
 
 Place the module beside the SkimMaster executables or under their `plugins/` directory. Use `.so` on Linux and `.dll` on Windows. Restart the station to discover newly installed modules. The standalone example under `tests/plugin_sdk/` builds a receiver and a decoder from the installed headers and exercises both through `SkimMasterTools`.
 

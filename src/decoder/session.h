@@ -12,10 +12,14 @@ struct SmDecoderRoute {
   const std::atomic_bool& stop;
 };
 
+// Metadata of the installed plugin for a slot mode. Throws when none is.
+const SmSlotDecoderMetadata& SlotDecoderMetadata(const std::string& mode);
+
 class SmSlotDecoderSession {
  public:
   SmSlotDecoderSession(const std::string& mode, const SmDecoderRoute& route,
-                       int sample_rate, SmSampleType sample_type);
+                       int sample_rate, SmSampleType sample_type,
+                       SmSettingValues options);
   ~SmSlotDecoderSession();
 
   bool Submit(SmDecoderSlot slot, bool wait);

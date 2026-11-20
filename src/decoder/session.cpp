@@ -29,7 +29,7 @@ std::vector<boost::dll::shared_library> DiscoverDecoders() {
   for (const auto& path : PluginModules("libdecoder")) {
     boost::dll::fs::error_code error;
     boost::dll::shared_library module(path, error);
-    if (!error && module.has("skim_slot_decoder_v2"))
+    if (!error && module.has("skim_slot_decoder_v3"))
       modules.push_back(std::move(module));
   }
   return modules;
@@ -42,7 +42,7 @@ const SmSlotDecoderPlugin& LoadDecoder(SmSlotMode mode) {
       *new const std::vector<boost::dll::shared_library>(DiscoverDecoders());
   for (const auto& module : modules) {
     const auto* plugin = module.get<const SmSlotDecoderPlugin*(SmSlotMode)>(
-        "skim_slot_decoder_v2")(mode);
+        "skim_slot_decoder_v3")(mode);
     if (plugin) return *plugin;
   }
   throw std::runtime_error(
@@ -50,9 +50,13 @@ const SmSlotDecoderPlugin& LoadDecoder(SmSlotMode mode) {
 }
 }  // namespace
 
+const SmSlotDecoderMetadata& SlotDecoderMetadata(const std::string& mode) {
+  return LoadDecoder(ParseMode(mode)).metadata();
+}
+
 struct SmSlotDecoderSession::SmState {
   SmState(SmSlotMode mode, const SmDecoderRoute& route, int rate,
-          SmSampleType type)
+          SmSampleType type, SmSettingValues options)
       : cancelled(route.stop) {
     const auto& decoder = LoadDecoder(mode);
     const auto& metadata = decoder.metadata();
@@ -61,7 +65,7 @@ struct SmSlotDecoderSession::SmState {
       throw std::runtime_error(
           "slot decoder input is incompatible with metadata");
     worker = decoder.start(route.decoder_id, queue, route.result_endpoint, stop,
-                           FftPlannerMutex());
+                           FftPlannerMutex(), std::move(options));
   }
 
   ~SmState() {
@@ -86,9 +90,10 @@ struct SmSlotDecoderSession::SmState {
 SmSlotDecoderSession::SmSlotDecoderSession(const std::string& mode,
                                            const SmDecoderRoute& route,
                                            int sample_rate,
-                                           SmSampleType sample_type)
+                                           SmSampleType sample_type,
+                                           SmSettingValues options)
     : state_(std::make_unique<SmState>(ParseMode(mode), route, sample_rate,
-                                       sample_type)) {}
+                                       sample_type, std::move(options))) {}
 
 SmSlotDecoderSession::~SmSlotDecoderSession() = default;
 

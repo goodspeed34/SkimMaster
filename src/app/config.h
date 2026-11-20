@@ -5,6 +5,8 @@
 #include <optional>
 #include <string>
 
+#include "core/settings.h"
+
 namespace skim {
 struct SmStationIdentity {
   std::string callsign;
@@ -96,6 +98,11 @@ void UpdateSchedule(const std::filesystem::path& file,
 void UpdateReportingService(const std::filesystem::path& file,
                             const std::string& expected,
                             const SmReportingServiceSettings& service);
+// Writes [decoders.<mode>], keeping only values that differ from the
+// decoder's defaults. Empty tables are removed.
+void UpdateDecoderSettings(const std::filesystem::path& file,
+                           const std::string& expected, const std::string& mode,
+                           const SmSettingValues& values);
 void SaveWizard(const std::filesystem::path& file, const std::string& expected,
                 const SmStationIdentity& identity, const std::string& receiver,
                 const std::string& device, int rate,
