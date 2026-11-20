@@ -7,7 +7,7 @@
 #include <memory>
 #include <stdexcept>
 
-#include "receiver/adapters.h"
+#include "receiver/plugin_api.h"
 
 namespace skim {
 namespace {
@@ -26,7 +26,7 @@ WavFile OpenIq(const char* path, SF_INFO& info) {
   if (info.frames <= 0) throw std::runtime_error("IQ WAV contains no samples");
   return input;
 }
-}  // namespace
+
 void ProbeDevices(const std::string& selector,
                   const SmReceiverCandidate& found) {
   namespace fs = std::filesystem;
@@ -78,4 +78,40 @@ void ReadWavIq(const char* path, int rate, const Samples& consume) {
   if (sf_error(input.get()) != SF_ERR_NO_ERROR || received != info.frames)
     throw std::runtime_error("failed to read the complete IQ WAV");
 }
+
+class SmWavReceiverPlugin final : public SmReceiverPlugin {
+ public:
+  const SmReceiverPluginMetadata& metadata() const noexcept override {
+    static constexpr SmReceiverPluginMetadata metadata{"wav"};
+    return metadata;
+  }
+
+  void Probe(const std::string& selector,
+             const SmReceiverCandidate& found) const override {
+    ProbeDevices(selector, found);
+  }
+
+  void Capture(const SmReceiverCaptureRequest& cfg, const Samples& samples,
+               const std::function<void()>& gap) const override {
+    (void)gap;
+    if (cfg.gain_db || cfg.correction_ppm)
+      throw std::runtime_error(
+          "IQ WAV does not support gain or PPM correction");
+    ReadWavIq(cfg.device.c_str(), cfg.rate, samples);
+  }
+};
+}  // namespace
 }  // namespace skim
+
+extern "C" SKIM_PLUGIN_EXPORT const skim::SmReceiverPlugin*
+skim_receiver_v2() noexcept {
+  static const skim::SmWavReceiverPlugin plugin;
+  return &plugin;
+}
+
+extern "C" SKIM_PLUGIN_EXPORT const skim::SmReceiverPluginDescriptor*
+skim_receiver_descriptor_v2() noexcept {
+  static constexpr skim::SmReceiverPluginDescriptor descriptor{
+      "wav:", "IQ WAV", "File or directory on server", true, false, true};
+  return &descriptor;
+}

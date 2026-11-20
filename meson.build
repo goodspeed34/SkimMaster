@@ -13,7 +13,6 @@ project(
 )
 
 csdr_dep = dependency('csdr')
-ftx = subproject('ft8_lib')
 decoder_deps = [
   subproject('readerwriterqueue').get_variable('readerwriterqueue_dep'),
   dependency('threads'),
@@ -46,45 +45,12 @@ deps = [
   subproject('sqlite_orm').get_variable('sqlite_orm_dep'),
 ] + socket_deps + decoder_deps
 
-wspr = subproject('wspr')
-src_includes = include_directories('src')
+subdir('sdk')
+src_includes = [include_directories('src'), plugin_sdk_includes]
 module_suffix = host_machine.system() == 'windows' ? 'dll' : 'so'
 build_flags = ['-DCPPHTTPLIB_OPENSSL_SUPPORT', '-DSKIM_VERSION="' + meson.project_version() + '"']
 build_flags += '-DSKIM_MODULE_SUFFIX=".' + module_suffix + '"'
-ftx_plugin = shared_module('decoderftx', 'src/decoder/ftx.cpp',
-  include_directories : src_includes,
-  dependencies : decoder_deps + [ftx.get_variable('ftx_dep')],
-  cpp_args : build_flags, name_prefix : 'lib', name_suffix : module_suffix,
-  install : true, install_dir : get_option('bindir'))
-wspr_plugin = shared_module('decoderwspr', 'src/decoder/wspr.cpp',
-  include_directories : src_includes,
-  dependencies : decoder_deps + [csdr_dep, wspr.get_variable('wspr_dep')],
-  cpp_args : build_flags,
-  name_prefix : 'lib', name_suffix : module_suffix, install : true, install_dir : get_option('bindir'))
-
-radio_modules = []
-foreach radio : ['soapy', 'rtltcp', 'alsa', 'wav']
-  if radio == 'alsa' and host_machine.system() != 'linux'
-    continue
-  endif
-  driver_source = 'src/receiver/adapters.cpp'
-  if radio == 'soapy'
-    driver_source = 'src/receiver/soapy.cpp'
-    driver_deps = [dependency('SoapySDR')]
-  elif radio == 'wav'
-    driver_source = 'src/receiver/wav.cpp'
-    driver_deps = [dependency('sndfile')]
-  elif radio == 'alsa'
-    driver_deps = [dependency('alsa')]
-  else
-    driver_deps = [boost] + socket_deps
-  endif
-  radio_modules += shared_module('rcvr'+radio, 'src/receiver/plugin.cpp', driver_source,
-    include_directories : src_includes,
-    dependencies : driver_deps,
-    cpp_args : ['-DSKIM_'+radio.to_upper(), '-DSKIM_RECEIVER_ID="' + radio + '"'],
-    name_prefix : 'lib', name_suffix : module_suffix, install : true, install_dir : get_option('bindir'))
-endforeach
+subdir('plugins')
 
 source_url = get_option('source_url')
 if source_url == ''
@@ -109,6 +75,7 @@ sources = files(
   'src/app/station.cpp',
   'src/app/wideband.cpp',
   'src/core/clock_health.cpp',
+  'src/core/plugin_modules.cpp',
   'src/decoder/session.cpp',
   'src/decoder/slot.cpp',
   'src/decoder/sstv.cpp',
@@ -131,9 +98,8 @@ station_lib = static_library(
 station_dep = declare_dependency(
   link_with : station_lib, include_directories : src_includes, dependencies : deps,
 )
-modules = [ftx_plugin, wspr_plugin] + radio_modules
 exe = executable('SkimMasterTools', 'src/app/tools.cpp',
-  link_depends : modules, dependencies : station_dep, install : true)
+  link_depends : plugin_modules, dependencies : station_dep, install : true)
 server = executable('SkimMaster', 'src/app/skimmaster.cpp',
   link_depends : [exe], dependencies : station_dep, install : true)
 

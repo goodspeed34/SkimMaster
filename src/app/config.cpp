@@ -240,8 +240,8 @@ SmInstanceSettings Parse(const fs::path& file, std::string source) {
   ValidateStation(topology);
   for (const auto& receiver : topology["receivers"]) {
     auto device = receiver.at("device").get<std::string>();
-    if (IsWavReceiver(device))
-      ResolveWavPath(std::string_view(device).substr(4), file.parent_path());
+    if (IsFileReceiver(device))
+      ResolveReceiverDevice(device, file.parent_path());
   }
   return {address,
           static_cast<int>(port),
@@ -349,10 +349,9 @@ void UpdateReceiver(const fs::path& file, const std::string& expected,
     toml::table added;
     auto& entry = existing == receivers.end() ? added : *existing->as_table();
     const auto& driver = DriverFor(r.device);
-    if (r.device.size() == std::char_traits<char>::length(driver.prefix))
+    if (r.device.size() == driver.prefix.size())
       throw std::runtime_error("enter a device parameter");
-    if ((r.gain || r.ppm) && (std::string_view(driver.id) == "wav" ||
-                              std::string_view(driver.id) == "alsa"))
+    if ((r.gain || r.ppm) && !driver.adjustable_gain)
       throw std::runtime_error(
           "this source does not support gain or PPM correction");
     if (r.rate < 12000 || r.rate > 6144000)
@@ -371,7 +370,7 @@ void UpdateReceiver(const fs::path& file, const std::string& expected,
     set("center_hz", r.center);
     set("gain_db", r.gain);
     set("ppm", r.ppm);
-    if (IsWavReceiver(r.device)) {
+    if (IsFileReceiver(r.device)) {
       set("utc_ms", r.utc);
       entry.insert_or_assign("repeat", r.repeat);
     } else {
@@ -548,7 +547,7 @@ void SaveWizard(const fs::path& file, const std::string& expected,
                          {"center_hz", receiver_center},
                          {"slices", toml::array{std::move(slice)}}};
   if (utc) definition.insert("utc_ms", *utc);
-  if (IsWavReceiver(device)) definition.insert("repeat", repeat);
+  if (IsFileReceiver(device)) definition.insert("repeat", repeat);
   table["receivers"].as_array()->push_back(std::move(definition));
   table.insert_or_assign("first_run_wizard", false);
   std::ostringstream output;

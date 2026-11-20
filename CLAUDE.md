@@ -29,7 +29,7 @@ Skim Master is a C++17 daemon that reads wideband IQ from radio front ends or re
 
 ## Source layout
 
-All production sources live under `src/`. Use it as the include root, with qualified paths such as `"decoder/slot.h"`. Keep `SmSpot` and other shared domain types in `core/types.h`, slot and streaming decoder entry points in `decoder/`, and `SaveSlot` in `store/`. Core has no dependencies on other project layers. Receiver and decoder interfaces consume core types and expose their own versioned plugin boundaries in `receiver/plugin_api.h` and `decoder/api.h`. The application coordinates those layers with DSP, persistence, reporting and the web panel.
+All production sources live under `src/`. Use it as the include root, with qualified paths such as `"decoder/slot.h"`. Keep `SmSpot` and other shared domain types in `sdk/core/types.h`, slot and streaming decoder entry points in `decoder/`, and `SaveSlot` in `store/`. Core has no dependencies on other project layers. Receiver and decoder interfaces consume core types and expose their own versioned plugin boundaries in `sdk/receiver/plugin_api.h` and `sdk/decoder/api.h`. The application coordinates those layers with DSP, persistence, reporting and the web panel.
 
 ## Licensing
 

@@ -72,7 +72,7 @@ std::vector<SmSpot> DecodeFtx(SmSlotMode mode, const std::vector<float>& audio,
 }  // namespace
 }  // namespace skim
 
-extern "C" SKIM_SLOT_DECODER_EXPORT const skim::SmSlotDecoderPlugin*
+extern "C" SKIM_PLUGIN_EXPORT const skim::SmSlotDecoderPlugin*
 skim_slot_decoder_v2(skim::SmSlotMode mode) {
   using namespace skim;
   static const SmBuiltinSlotDecoder ft4(

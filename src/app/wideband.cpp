@@ -127,7 +127,8 @@ class SmSlicePipeline {
     Check(nng_dial(tx_.socket, addr.c_str(), nullptr, 0));
     auto db = root.at("database").get<std::string>();
     auto gallery = root.value("gallery", "gallery");
-    int64_t utc = root.value("utc_ms", int64_t{IsWavReceiver(device) ? 0 : -1});
+    int64_t utc =
+        root.value("utc_ms", int64_t{IsFileReceiver(device) ? 0 : -1});
     if (file_ && utc < 0)
       throw std::runtime_error("replayed wideband IQ requires utc_ms");
     if (utc > 100000000000000LL) throw std::runtime_error("invalid UTC origin");
@@ -282,7 +283,7 @@ void SmReceiver::RunWideband() const {
   if (root.contains("ppm"))
     capture.correction_ppm = root.at("ppm").get<double>();
   const bool repeat = root.value("repeat", false);
-  if (repeat && !IsWavReceiver(device))
+  if (repeat && !IsFileReceiver(device))
     throw std::runtime_error("repeat is available only for WAV receivers");
   const std::string database = root.at("database");
   const bool live = !IsReplayReceiver(device);

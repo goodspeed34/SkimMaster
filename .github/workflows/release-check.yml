@@ -24,6 +24,7 @@ jobs:
           meson compile -C build
           meson test -C build --print-errorlogs --suite SkimMaster
           meson install -C build --no-rebuild
+          python3 tests/plugin_sdk.py /opt/SkimMaster
           python3 tests/wav_receiver.py /opt/SkimMaster/bin/SkimMasterTools /opt/SkimMaster/bin/SkimMaster subprojects/ft8_lib/test/wav/191111_110130.wav
 
   windows:
@@ -48,5 +49,6 @@ jobs:
           meson compile -C build
           meson test -C build --print-errorlogs --suite SkimMaster
           meson install -C build --no-rebuild
+          python tests/plugin_sdk.py "$(cygpath -m "$RUNNER_TEMP")/SkimMaster"
           installed="$(cygpath -u "$RUNNER_TEMP")/SkimMaster/bin"
           python tests/wav_receiver.py "$installed/SkimMasterTools.exe" "$installed/SkimMaster.exe" subprojects/ft8_lib/test/wav/191111_110130.wav

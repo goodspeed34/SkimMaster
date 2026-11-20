@@ -7,16 +7,13 @@ for (const probe of document.querySelectorAll("[data-receiver-probe]")) {
     const status = probe.querySelector("[data-probe-status]");
     const form = probe.closest("form");
     const {device, rate, csrf, mode} = form.elements;
-    const placeholders = {
-        soapy: "Optional driver=… filter",
-        rtltcp: "127.0.0.1:1234",
-        alsa: "Optional PCM name filter",
-        wav: "File or directory on server"
-    };
+    const drivers = Array.from(select.options).sort(
+        (a, b) => b.dataset.prefix.length - a.dataset.prefix.length);
+    scan.disabled = drivers.length === 0;
     let devices = [];
 
     function resetResults() {
-        target.placeholder = placeholders[select.value];
+        target.placeholder = select.selectedOptions[0]?.dataset.hint || "";
         results.hidden = true;
         status.textContent = "";
     }
@@ -27,11 +24,11 @@ for (const probe of document.querySelectorAll("[data-receiver-probe]")) {
             input.disabled = !visible;
     }
     function showOptions() {
-        const wav = device.value.startsWith("wav:");
-        const alsa = device.value.startsWith("alsa:");
+        const driver = drivers.find(option => device.value.startsWith(option.dataset.prefix));
         for (const row of form.querySelectorAll("[data-live-option]"))
-            toggleRow(row, !wav && !alsa);
-        toggleRow(form.querySelector("[data-wav-option]"), wav);
+            toggleRow(row, driver?.hasAttribute("data-adjustable-gain") ?? true);
+        toggleRow(form.querySelector("[data-wav-option]"),
+                  driver?.hasAttribute("data-recording") ?? false);
         toggleRow(form.querySelector("[data-slice-center]"), mode && ["CW", "RTTY"].includes(mode.value));
         toggleRow(form.querySelector("[data-dial-option]"),
                   mode && ["FT8", "FT4", "WSPR", "SSTV"].includes(mode.value));
@@ -91,7 +88,7 @@ for (const probe of document.querySelectorAll("[data-receiver-probe]")) {
         if (selected.rate) rate.value = selected.rate;
         showOptions();
     });
-    if (select.value === "rtltcp" || select.value === "wav")
+    if (select.selectedOptions[0]?.hasAttribute("data-probe-from-device"))
         target.value = device.value;
     resetResults();
     showOptions();

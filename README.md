@@ -120,6 +120,12 @@ Station Settings also offers a snapshot download. Restore validates the archive 
 `--decode FT8|FT4|WSPR AUDIO DIAL_HZ UTC_MS RECEIVER DB` decodes a complete slot from 12 kHz mono audio. `--receive` and `--sstv` also accept interleaved native float32 IQ pairs on standard input using device `-`. Run `SkimMasterTools --help` for command syntax.
 
 
+## Building an external plugin
+
+Meson installs the C++17 plugin SDK under `include/skimmaster`. Add that directory to your plugin's include path and build a shared module with the same C++ toolchain as the host. A receiver includes `receiver/plugin_api.h`, exports `skim_receiver_v2` and `skim_receiver_descriptor_v2`, and uses a filename starting with `librcvr`. A slot decoder includes `decoder/api.h` and can use the worker in `decoder/slot_plugin.h` with NNG and nlohmann-json. It exports `skim_slot_decoder_v2` and uses a filename starting with `libdecoder`.
+
+Place the module beside the SkimMaster executables or under their `plugins/` directory. Use `.so` on Linux and `.dll` on Windows. Restart the station to discover newly installed modules. The standalone example under `tests/plugin_sdk/` builds a receiver and a decoder from the installed headers and exercises both through `SkimMasterTools`.
+
 ## License
 
 Skim Master is licensed under the GNU Affero General Public License, version 3 or any later version (SPDX `AGPL-3.0-or-later`). See [COPYING](COPYING) and [third-party notices](THIRD-PARTY-NOTICES.txt).

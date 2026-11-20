@@ -9,9 +9,14 @@
 
 namespace skim {
 struct SmReceiverDriver {
-  const char* id;
-  const char* prefix;
-  const char* label;
+  std::string id;
+  std::string prefix;
+  std::string label;
+  std::string probe_hint;
+  bool recording;
+  bool adjustable_gain;
+  bool probe_from_device;
+  std::filesystem::path module_path;
 };
 struct SmFoundReceiver {
   std::string device;
@@ -23,15 +28,14 @@ const SmReceiverDriver& DriverFor(std::string_view device);
 std::vector<SmFoundReceiver> ProbeReceiver(std::string_view driver,
                                            std::string selector,
                                            const std::filesystem::path& base);
-inline bool IsWavReceiver(std::string_view device) {
-  return device.rfind("wav:", 0) == 0;
-}
+bool IsFileReceiver(std::string_view device);
 inline bool IsReplayReceiver(std::string_view device) {
-  return device == "-" || IsWavReceiver(device);
+  return device == "-" || IsFileReceiver(device);
 }
-// Resolve a recording name relative to the caller's configuration directory.
-std::filesystem::path ResolveWavPath(std::string_view path,
-                                     const std::filesystem::path& base = {});
+// Resolve file-backed selectors relative to the caller's configuration
+// directory.
+std::string ResolveReceiverDevice(std::string_view device,
+                                  const std::filesystem::path& base);
 using IqReader = std::function<void(const char*, int64_t, int, const Samples&,
                                     const std::function<void()>&)>;
 void ReadReceiver(SmReceiverCaptureRequest request, const Samples& samples,

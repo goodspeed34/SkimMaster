@@ -91,7 +91,13 @@ std::optional<double> FormDecimal(const httplib::Request& req,
 Json DriverOptions() {
   auto options = Json::array();
   for (const auto& driver : ReceiverDrivers())
-    options.push_back({driver.id, driver.label});
+    options.push_back({{"id", Escape(driver.id.c_str())},
+                       {"label", Escape(driver.label.c_str())},
+                       {"prefix", Escape(driver.prefix.c_str())},
+                       {"hint", Escape(driver.probe_hint.c_str())},
+                       {"recording", driver.recording},
+                       {"gain", driver.adjustable_gain},
+                       {"probe_from_device", driver.probe_from_device}});
   return options;
 }
 std::string DisplayField(const Json& row, const char* key,
@@ -504,7 +510,7 @@ void Serve(const char* config, const char* address, int port,
                {"mode", "FT8"},
                {"rate", "192000"},
                {"drivers", DriverOptions()},
-               {"probe_driver", "soapy"},
+               {"probe_driver", ""},
                {"dial_hz", "14074000"},
                {"repeat", true}};
     if (error.empty()) {
@@ -556,7 +562,7 @@ void Serve(const char* config, const char* address, int port,
     auto slice_fields =
         Json{{"mode", ""}, {"slice_center", ""}, {"dial_hz", ""}};
     bool found = original.empty() && action != "delete";
-    std::string probe_driver = "soapy";
+    std::string probe_driver;
     const auto instance = SmInstance::FromSettings(settings);
     for (const auto* source : instance->receivers()) {
       const auto& receiver = source->settings();
@@ -740,11 +746,9 @@ void Serve(const char* config, const char* address, int port,
       auto ppm = FormDecimal(req, "ppm");
       if ((gain && std::abs(*gain) > 200) || (ppm && std::abs(*ppm) > 1000))
         throw std::runtime_error("Invalid gain or frequency correction.");
-      if (IsWavReceiver(device)) {
-        device =
-            "wav:" + ResolveWavPath(std::string_view(device).substr(4),
-                                    std::filesystem::path(config).parent_path())
-                         .string();
+      if (IsFileReceiver(device)) {
+        device = ResolveReceiverDevice(
+            device, std::filesystem::path(config).parent_path());
       } else {
         for (const auto& row : Query(database,
                                      "SELECT json_extract(plan,'$.device') "

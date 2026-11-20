@@ -2,13 +2,13 @@
 
 #include <algorithm>
 #include <array>
-#include <boost/dll/runtime_symbol_info.hpp>
-#include <boost/dll/shared_library.hpp>
 #include <cmath>
 #include <cstdlib>
 #include <exception>
 #include <iostream>
 #include <stdexcept>
+
+#include "core/plugin_modules.h"
 
 #ifdef _WIN32
 #include <fcntl.h>
@@ -16,11 +16,56 @@
 #endif
 namespace skim {
 namespace {
-boost::dll::shared_library LoadReceiverModule(const SmReceiverDriver& driver) {
-  auto path = boost::dll::program_location().parent_path() /
-              (std::string("librcvr") + driver.id + SKIM_MODULE_SUFFIX);
-  return boost::dll::shared_library(path);
+using SmReceiverFactory = const SmReceiverPlugin*() noexcept;
+using SmReceiverDescriptorFactory =
+    const SmReceiverPluginDescriptor*() noexcept;
+
+std::vector<SmReceiverDriver> DiscoverReceivers() {
+  std::vector<SmReceiverDriver> drivers;
+  for (const auto& path : PluginModules("librcvr")) {
+    boost::dll::fs::error_code error;
+    boost::dll::shared_library module(path, error);
+    if (error || !module.has("skim_receiver_v2") ||
+        !module.has("skim_receiver_descriptor_v2"))
+      continue;
+    const auto* plugin = module.get<SmReceiverFactory>("skim_receiver_v2")();
+    const auto* descriptor = module.get<SmReceiverDescriptorFactory>(
+        "skim_receiver_descriptor_v2")();
+    if (!plugin || !descriptor) continue;
+    const auto id = plugin->metadata().driver_id;
+    if (id.empty() || descriptor->label.empty() ||
+        (!descriptor->prefix.empty() && descriptor->prefix.back() != ':') ||
+        (descriptor->recording && descriptor->prefix.empty()))
+      continue;
+    const auto duplicate =
+        std::find_if(drivers.begin(), drivers.end(), [&](const auto& driver) {
+          return driver.id == id || driver.prefix == descriptor->prefix;
+        });
+    if (duplicate != drivers.end()) continue;
+    drivers.push_back(
+        {std::string(id), std::string(descriptor->prefix),
+         std::string(descriptor->label), std::string(descriptor->probe_hint),
+         descriptor->recording, descriptor->adjustable_gain,
+         descriptor->probe_from_device, std::filesystem::path(path.native())});
+  }
+  std::stable_partition(drivers.begin(), drivers.end(), [](const auto& driver) {
+    return driver.prefix.empty();
+  });
+  return drivers;
 }
+
+const SmReceiverDriver* FindExplicitDriver(std::string_view device) {
+  const SmReceiverDriver* match = nullptr;
+  for (const auto& driver : ReceiverDrivers())
+    if (!driver.prefix.empty() && device.rfind(driver.prefix, 0) == 0 &&
+        (!match || driver.prefix.size() > match->prefix.size()))
+      match = &driver;
+  return match;
+}
+
+std::filesystem::path ResolveFilePath(std::string_view path,
+                                      const std::filesystem::path& base = {});
+
 // Copy backend errors before the module is unloaded. A callback can throw
 // a host exception to stop capture, which must reach the original caller.
 template <typename Operation>
@@ -39,12 +84,11 @@ void InvokePlugin(const Operation& operation, const char* fallback,
 class SmReceiverSession {
  public:
   explicit SmReceiverSession(const SmReceiverDriver& driver)
-      : module_(LoadReceiverModule(driver)) {
+      : module_(boost::dll::fs::path(driver.module_path.native())) {
     if (!module_.has("skim_receiver_v2"))
       throw std::runtime_error(
           "receiver module does not export skim_receiver_v2");
-    plugin_ =
-        module_.get<const SmReceiverPlugin*() noexcept>("skim_receiver_v2")();
+    plugin_ = module_.get<SmReceiverFactory>("skim_receiver_v2")();
     if (!plugin_ || plugin_->metadata().driver_id != driver.id)
       throw std::runtime_error("receiver plugin driver ID mismatch");
   }
@@ -85,23 +129,34 @@ class SmReceiverSession {
 }  // namespace
 
 const std::vector<SmReceiverDriver>& ReceiverDrivers() {
-  static const std::vector<SmReceiverDriver> drivers{
-      {"soapy", "", "SoapySDR"},
-      {"rtltcp", "rtltcp:", "RTL-TCP"},
-#ifdef __linux__
-      {"alsa", "alsa:", "ALSA"},
-#endif
-      {"wav", "wav:", "IQ WAV"},
-  };
+  static const auto drivers = DiscoverReceivers();
   return drivers;
 }
+
 const SmReceiverDriver& DriverFor(std::string_view device) {
+  if (const auto* driver = FindExplicitDriver(device)) return *driver;
   const auto& drivers = ReceiverDrivers();
-  for (const auto& driver : drivers)
-    if (*driver.prefix && device.rfind(driver.prefix, 0) == 0) return driver;
-  if (device.rfind("alsa:", 0) == 0)
-    throw std::runtime_error("ALSA receivers are available only on Linux");
+  const auto prefix = device.substr(0, device.find(':'));
+  if (prefix.size() < device.size() &&
+      prefix.find_first_not_of("abcdefghijklmnopqrstuvwxyz0123456789_-") ==
+          std::string_view::npos)
+    throw std::runtime_error("receiver device prefix has no installed driver");
+  if (drivers.empty() || !drivers.front().prefix.empty())
+    throw std::runtime_error("no default receiver driver is installed");
   return drivers.front();
+}
+
+bool IsFileReceiver(std::string_view device) {
+  const auto* driver = FindExplicitDriver(device);
+  return driver && driver->recording;
+}
+
+std::string ResolveReceiverDevice(std::string_view device,
+                                  const std::filesystem::path& base) {
+  const auto* driver = FindExplicitDriver(device);
+  if (!driver || !driver->recording) return std::string(device);
+  return driver->prefix +
+         ResolveFilePath(device.substr(driver->prefix.size()), base).string();
 }
 
 std::vector<SmFoundReceiver> ProbeReceiver(std::string_view id,
@@ -112,11 +167,11 @@ std::vector<SmFoundReceiver> ProbeReceiver(std::string_view id,
                              [&](const auto& d) { return id == d.id; });
   if (driver == drivers.end())
     throw std::runtime_error("unknown receiver driver");
-  if (*driver->prefix && selector.rfind(driver->prefix, 0) == 0)
-    selector.erase(0, std::char_traits<char>::length(driver->prefix));
-  if (id == "wav")
+  if (selector.rfind(driver->prefix, 0) == 0)
+    selector.erase(0, driver->prefix.size());
+  if (driver->recording)
     selector = selector.empty() ? base.string()
-                                : ResolveWavPath(selector, base).string();
+                                : ResolveFilePath(selector, base).string();
   SmReceiverSession session(*driver);
   std::vector<SmFoundReceiver> devices;
   session.Probe(selector, [&](const std::string& device,
@@ -129,11 +184,12 @@ std::vector<SmFoundReceiver> ProbeReceiver(std::string_view id,
   return devices;
 }
 
-std::filesystem::path ResolveWavPath(std::string_view path,
-                                     const std::filesystem::path& base) {
+namespace {
+std::filesystem::path ResolveFilePath(std::string_view path,
+                                      const std::filesystem::path& base) {
   namespace fs = std::filesystem;
   if (path.empty())
-    throw std::runtime_error("WAV receiver requires a file path");
+    throw std::runtime_error("recording receiver requires a file path");
   if (path.rfind("~/", 0) == 0
 #ifdef _WIN32
       || path.rfind("~\\", 0) == 0
@@ -145,12 +201,14 @@ std::filesystem::path ResolveWavPath(std::string_view path,
     const char* home = std::getenv("HOME");
 #endif
     if (!home || !fs::path(home).is_absolute())
-      throw std::runtime_error("cannot resolve the WAV path's home directory");
+      throw std::runtime_error(
+          "cannot resolve the recording path's home directory");
     return (fs::path(home) / fs::path(path.substr(2)).relative_path())
         .lexically_normal();
   }
   return (base / fs::path(path)).lexically_normal();
 }
+}  // namespace
 void ReadIq(const char* device, int64_t dial_hz, int rate,
             const Samples& consume, const std::function<void()>& gap) {
   ReadReceiver(device, dial_hz, rate, NAN, NAN, consume, gap);
@@ -184,9 +242,9 @@ void ReadReceiver(SmReceiverCaptureRequest request, const Samples& consume,
   if (request.correction_ppm && !std::isfinite(*request.correction_ppm))
     request.correction_ppm.reset();
   const auto& driver = DriverFor(request.device);
-  request.device.erase(0, std::char_traits<char>::length(driver.prefix));
-  if (std::string_view(driver.id) == "wav")
-    request.device = ResolveWavPath(request.device).string();
+  request.device.erase(0, driver.prefix.size());
+  if (driver.recording)
+    request.device = ResolveFilePath(request.device).string();
   SmReceiverSession session(driver);
   session.Capture(request, consume, gap);
 }

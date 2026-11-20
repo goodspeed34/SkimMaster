@@ -6,8 +6,9 @@
 #include <memory>
 #include <stdexcept>
 
-#include "receiver/adapters.h"
+#include "receiver/plugin_api.h"
 namespace skim {
+namespace {
 void ProbeDevices(const std::string& selector,
                   const SmReceiverCandidate& found) {
   for (const auto& args : SoapySDR::Device::enumerate(selector)) {
@@ -66,4 +67,38 @@ void ReadSoapy(const char* device, int64_t dial_hz, int rate, double gain,
   }
   radio->deactivateStream(stream);
 }
+
+class SmSoapyReceiverPlugin final : public SmReceiverPlugin {
+ public:
+  const SmReceiverPluginMetadata& metadata() const noexcept override {
+    static constexpr SmReceiverPluginMetadata metadata{"soapy"};
+    return metadata;
+  }
+
+  void Probe(const std::string& selector,
+             const SmReceiverCandidate& found) const override {
+    ProbeDevices(selector, found);
+  }
+
+  void Capture(const SmReceiverCaptureRequest& cfg, const Samples& samples,
+               const std::function<void()>& gap) const override {
+    ReadSoapy(cfg.device.c_str(), cfg.center_hz, cfg.rate,
+              cfg.gain_db.value_or(NAN), cfg.correction_ppm.value_or(NAN),
+              samples, gap);
+  }
+};
+}  // namespace
 }  // namespace skim
+
+extern "C" SKIM_PLUGIN_EXPORT const skim::SmReceiverPlugin*
+skim_receiver_v2() noexcept {
+  static const skim::SmSoapyReceiverPlugin plugin;
+  return &plugin;
+}
+
+extern "C" SKIM_PLUGIN_EXPORT const skim::SmReceiverPluginDescriptor*
+skim_receiver_descriptor_v2() noexcept {
+  static constexpr skim::SmReceiverPluginDescriptor descriptor{
+      "", "SoapySDR", "Optional driver=… filter", false, true, false};
+  return &descriptor;
+}

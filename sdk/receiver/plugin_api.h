@@ -7,10 +7,22 @@
 #include <string_view>
 
 #include "core/iq.h"
+#include "core/plugin_export.h"
 
 namespace skim {
 struct SmReceiverPluginMetadata {
   std::string_view driver_id;
+};
+
+// Returned by skim_receiver_descriptor_v2. An empty prefix selects the
+// default driver for device strings with no registered prefix.
+struct SmReceiverPluginDescriptor {
+  std::string_view prefix;
+  std::string_view label;
+  std::string_view probe_hint;
+  bool recording;
+  bool adjustable_gain;
+  bool probe_from_device;
 };
 
 struct SmReceiverCaptureRequest {

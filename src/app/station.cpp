@@ -132,16 +132,16 @@ void Validate(const Json& cfg) {
         throw std::runtime_error("invalid receiver center");
     };
     if (r.contains("center_hz")) check_center(r.at("center_hz"));
-    if (IsWavReceiver(dev) &&
-        (dev.size() == 4 || r.contains("gain_db") || r.contains("ppm")))
+    if (IsFileReceiver(dev) && (dev.size() == DriverFor(dev).prefix.size() ||
+                                r.contains("gain_db") || r.contains("ppm")))
       throw std::runtime_error(
           "WAV receiver requires a path and has no gain or PPM settings");
     if (r.contains("repeat") &&
-        (!IsWavReceiver(dev) || !r.at("repeat").is_boolean()))
+        (!IsFileReceiver(dev) || !r.at("repeat").is_boolean()))
       throw std::runtime_error("repeat must be a boolean on a WAV receiver");
     if (r.contains("utc_ms")) {
       auto utc = r.at("utc_ms");
-      if (!IsWavReceiver(dev) || !utc.is_number_integer() || utc < 0 ||
+      if (!IsFileReceiver(dev) || !utc.is_number_integer() || utc < 0 ||
           utc > 100000000000000LL)
         throw std::runtime_error(
             "utc_ms must be a nonnegative WAV start time in milliseconds");
@@ -241,11 +241,7 @@ Json SmInstance::WorkerPlans(const char* database, const char* gallery,
     }
     if (!winner) continue;
     auto device = receiver->device();
-    if (IsWavReceiver(device)) {
-      auto path =
-          ResolveWavPath(std::string_view(device).substr(4), config_dir);
-      device = "wav:" + path.string();
-    }
+    device = ResolveReceiverDevice(device, config_dir);
     const int64_t center = winner->at("center_hz");
     auto active = Json::array();
     const auto selected_group =
@@ -503,7 +499,8 @@ void SmInstance::Run(const std::filesystem::path& config) {
       if (job.process && !job.process->running()) {
         job.process->wait();
         auto code = job.process->exit_code();
-        job.finished = code == 0 && IsWavReceiver(job.plan.value("device", ""));
+        job.finished =
+            code == 0 && IsFileReceiver(job.plan.value("device", ""));
         state(job.finished ? "WAV playback complete"
                            : "Exited (" + std::to_string(code) + "), retrying");
         job.process.reset();

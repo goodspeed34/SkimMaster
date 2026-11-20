@@ -3,11 +3,11 @@
 #include <nng/nng.h>
 #include <nng/protocol/reqrep0/rep.h>
 
-#include <boost/dll/runtime_symbol_info.hpp>
 #include <boost/dll/shared_library.hpp>
 #include <chrono>
 #include <stdexcept>
 
+#include "core/plugin_modules.h"
 #include "decoder/result_wire.h"
 #include "dsp/fft_lock.h"
 
@@ -22,11 +22,22 @@ SmSlotMode ParseMode(const std::string& mode) {
   throw std::runtime_error("supported slot modes are FT4, FT8 and WSPR");
 }
 
-boost::dll::shared_library LoadDecoder(SmSlotMode mode) {
-  std::string name = mode == SmSlotMode::Wspr ? "decoderwspr" : "decoderftx";
-  return boost::dll::shared_library(
-      boost::dll::program_location().parent_path() /
-      ("lib" + name + SKIM_MODULE_SUFFIX));
+struct SmLoadedSlotDecoder {
+  boost::dll::shared_library module;
+  const SmSlotDecoderPlugin* plugin;
+};
+
+SmLoadedSlotDecoder LoadDecoder(SmSlotMode mode) {
+  for (const auto& path : PluginModules("libdecoder")) {
+    boost::dll::fs::error_code error;
+    boost::dll::shared_library module(path, error);
+    if (error || !module.has("skim_slot_decoder_v2")) continue;
+    const auto* plugin = module.get<const SmSlotDecoderPlugin*(SmSlotMode)>(
+        "skim_slot_decoder_v2")(mode);
+    if (plugin) return {std::move(module), plugin};
+  }
+  throw std::runtime_error(
+      "no installed slot decoder supports the requested mode");
 }
 }  // namespace
 
@@ -34,9 +45,7 @@ struct SmSlotDecoderSession::SmState {
   SmState(SmSlotMode mode, const SmDecoderRoute& route, int rate,
           SmSampleType type)
       : module(LoadDecoder(mode)), cancelled(route.stop) {
-    const auto* decoder = module.get<const SmSlotDecoderPlugin*(SmSlotMode)>(
-        "skim_slot_decoder_v2")(mode);
-    if (!decoder) throw std::runtime_error("slot decoder mode unavailable");
+    const auto* decoder = module.plugin;
     const auto& metadata = decoder->metadata();
     if (metadata.supported_mode != mode || metadata.required_type != type ||
         rate < metadata.min_samplerate || rate > metadata.max_samplerate)
@@ -59,7 +68,7 @@ struct SmSlotDecoderSession::SmState {
     }
   }
 
-  boost::dll::shared_library module;
+  SmLoadedSlotDecoder module;
   const std::atomic_bool& cancelled;
   std::atomic_bool stop{false};
   DecoderInput queue{1};

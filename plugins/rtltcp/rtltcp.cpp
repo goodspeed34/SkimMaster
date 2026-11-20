@@ -1,19 +1,13 @@
-#include "receiver/adapters.h"
-
-#include <boost/asio.hpp>
-#ifdef SKIM_ALSA
-#include <alsa/asoundlib.h>
-#endif
 #include <array>
+#include <boost/asio.hpp>
 #include <chrono>
 #include <cmath>
-#include <cstdlib>
 #include <cstring>
-#include <memory>
 #include <stdexcept>
 
+#include "receiver/plugin_api.h"
+
 namespace skim {
-#ifndef SKIM_ALSA
 namespace {
 using Tcp = boost::asio::ip::tcp;
 using RtlHeader = std::array<uint8_t, 12>;
@@ -32,7 +26,7 @@ void CheckRtlHeader(const RtlHeader& header) {
   if (std::memcmp(header.data(), "RTL0", 4))
     throw std::runtime_error("invalid rtl_tcp handshake");
 }
-}  // namespace
+
 void ProbeDevices(const std::string& selector,
                   const SmReceiverCandidate& found) {
   const auto address = selector.empty() ? "127.0.0.1:1234" : selector;
@@ -113,58 +107,38 @@ void ReadRtlTcp(const std::string& address, int64_t center, int rate,
     if (error) throw boost::system::system_error(error);
   }
 }
-#endif
-#ifdef SKIM_ALSA
-void ProbeDevices(const std::string& selector,
-                  const SmReceiverCandidate& found) {
-  void** hints = nullptr;
-  const int rc = snd_device_name_hint(-1, "pcm", &hints);
-  if (rc < 0) throw std::runtime_error(snd_strerror(rc));
-  std::unique_ptr<void*, decltype(&snd_device_name_free_hint)> cleanup(
-      hints, snd_device_name_free_hint);
-  for (auto hint = hints; hint && *hint; ++hint) {
-    auto get = [&](const char* key) {
-      std::unique_ptr<char, decltype(&std::free)> value(
-          snd_device_name_get_hint(*hint, key), std::free);
-      return value ? std::string(value.get()) : std::string();
-    };
-    if (get("IOID") == "Output") continue;
-    auto name = get("NAME");
-    auto label = get("DESC");
-    if (name.empty() || name == "null" ||
-        (name.find(selector) == std::string::npos &&
-         label.find(selector) == std::string::npos))
-      continue;
-    for (char& c : label)
-      if (c == '\n') c = ' ';
-    if (!found(name, label.empty() ? name : label, 0)) break;
+
+class SmRtlTcpReceiverPlugin final : public SmReceiverPlugin {
+ public:
+  const SmReceiverPluginMetadata& metadata() const noexcept override {
+    static constexpr SmReceiverPluginMetadata metadata{"rtltcp"};
+    return metadata;
   }
+
+  void Probe(const std::string& selector,
+             const SmReceiverCandidate& found) const override {
+    ProbeDevices(selector, found);
+  }
+
+  void Capture(const SmReceiverCaptureRequest& cfg, const Samples& samples,
+               const std::function<void()>& gap) const override {
+    (void)gap;
+    ReadRtlTcp(cfg.device, cfg.center_hz, cfg.rate, cfg.gain_db.value_or(NAN),
+               cfg.correction_ppm.value_or(NAN), samples);
+  }
+};
+}  // namespace
+}  // namespace skim
+
+extern "C" SKIM_PLUGIN_EXPORT const skim::SmReceiverPlugin*
+skim_receiver_v2() noexcept {
+  static const skim::SmRtlTcpReceiverPlugin plugin;
+  return &plugin;
 }
 
-void ReadAlsa(const std::string& name, int rate, const Samples& consume,
-              const std::function<void()>& gap) {
-  snd_pcm_t* handle = nullptr;
-  auto check = [](int rc) {
-    if (rc < 0) throw std::runtime_error(snd_strerror(rc));
-  };
-  check(snd_pcm_open(&handle, name.c_str(), SND_PCM_STREAM_CAPTURE, 0));
-  std::unique_ptr<snd_pcm_t, decltype(&snd_pcm_close)> pcm(handle,
-                                                           snd_pcm_close);
-  check(snd_pcm_set_params(handle, SND_PCM_FORMAT_S16,
-                           SND_PCM_ACCESS_RW_INTERLEAVED, 2, rate, 1, 50000));
-  std::array<int16_t, 8192> raw;
-  std::array<std::complex<float>, 4096> iq;
-  for (;;) {
-    auto n = snd_pcm_readi(handle, raw.data(), iq.size());
-    if (n < 0) {
-      check(snd_pcm_recover(handle, n, 1));
-      gap();
-      continue;
-    }
-    for (int i = 0; i < n; ++i)
-      iq[i] = {raw[2 * i] / 32768.f, raw[2 * i + 1] / 32768.f};
-    consume(iq.data(), n);
-  }
+extern "C" SKIM_PLUGIN_EXPORT const skim::SmReceiverPluginDescriptor*
+skim_receiver_descriptor_v2() noexcept {
+  static constexpr skim::SmReceiverPluginDescriptor descriptor{
+      "rtltcp:", "RTL-TCP", "127.0.0.1:1234", false, true, true};
+  return &descriptor;
 }
-#endif
-}  // namespace skim

@@ -1,7 +1,13 @@
 <div class="action-bar" data-receiver-probe>
   <label>Driver
     <select data-probe-driver>
-      {% for driver in drivers %}<option value="{{ driver.0 }}"{% if driver.0 == probe_driver %} selected{% endif %}>{{ driver.1 }}</option>{% endfor %}
+      {% for driver in drivers %}
+      <option value="{{ driver.id }}" data-prefix="{{ driver.prefix }}"
+        data-hint="{{ driver.hint }}"{% if driver.recording %} data-recording{% endif %}
+        {% if driver.gain %} data-adjustable-gain{% endif %}
+        {% if driver.probe_from_device %} data-probe-from-device{% endif %}
+        {% if driver.id == probe_driver %} selected{% endif %}>{{ driver.label }}</option>
+      {% endfor %}
     </select>
   </label>
   <label>Probe target <input type="text" data-probe-target size="24"></label>

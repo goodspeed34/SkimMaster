@@ -151,7 +151,7 @@ void ReceiveSlice(const SmSlice& slice, int64_t dial, const char* database,
   std::array<std::complex<float>, taps> history{};
   int head = 0;
   int filter_fill = 0;
-  const bool wav = IsWavReceiver(device);
+  const bool wav = IsFileReceiver(device);
   const bool file = IsReplayReceiver(device);
   if (wav && first_ms < 0) first_ms = 0;
   if (file && first_ms < 0)

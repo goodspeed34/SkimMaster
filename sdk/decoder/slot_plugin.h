@@ -7,6 +7,7 @@
 #include <stdexcept>
 #include <utility>
 
+#include "core/plugin_export.h"
 #include "decoder/api.h"
 #include "decoder/result_wire.h"
 
@@ -57,9 +58,3 @@ class SmBuiltinSlotDecoder final : public SmSlotDecoderPlugin {
   const DecodeSamples decode_;
 };
 }  // namespace skim
-
-#ifdef _WIN32
-#define SKIM_SLOT_DECODER_EXPORT __declspec(dllexport)
-#else
-#define SKIM_SLOT_DECODER_EXPORT __attribute__((visibility("default")))
-#endif
