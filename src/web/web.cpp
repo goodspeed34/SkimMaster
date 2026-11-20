@@ -11,8 +11,7 @@
 
 #include "app/config.h"
 #include "app/station_lock.h"
-#include "dsp/spectrum.h"
-#include "store/store.h"
+#include "core/schema.h"
 #include "web/common.h"
 #include "web/panel_assets.h"
 
@@ -30,12 +29,10 @@ void Serve(const char* config, const char* address, int port,
            const char* database, const char* gallery) {
   const auto database_path = OperationalDatabasePath(database);
   const auto database_name = database_path.string();
-  // Initialize the store for a new station.
-  SaveSlot(database_name.c_str(), "", "", 0, {});
+  InitStationSchema(database_name.c_str());
   std::filesystem::create_directories(gallery);
   httplib::Server server;
   server.new_task_queue = [] { return new httplib::ThreadPool(4); };
-  InitSpectrum(database_name.c_str());
   server.set_payload_max_length(1024 * 1024);
   std::array<unsigned char, 32> random{};
   if (RAND_bytes(random.data(), random.size()) != 1)

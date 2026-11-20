@@ -88,9 +88,9 @@ center_hz = 14080000
             decoder_ids = set(re.findall(r'^\s*decoder_id = "([^"]+)"', source, re.M))
             assert len(slice_ids) == len(decoder_ids) == 4
             with closing(sqlite3.connect(database)) as db, db:
-                assert db.execute(
-                    "SELECT sql FROM sqlite_schema WHERE name='workers'"
-                ).fetchone() == (worker_schema,)
+                columns = {row[1] for row in db.execute("PRAGMA table_info(workers)")}
+                assert {"kind", "state", "pid", "restarts"} <= columns, columns
+                assert db.execute("PRAGMA user_version").fetchone() == (2,)
                 assert db.execute(
                     "SELECT count(*) FROM workers WHERE id='stale'"
                 ).fetchone() == (0,)
@@ -102,6 +102,23 @@ center_hz = 14080000
                     assert slice_["receiver_id"] == "west"
                     assert slice_["slice_id"] in slice_ids
                     assert slice_["decoder_id"] in decoder_ids
+                kinds = dict(db.execute("SELECT id,kind FROM workers"))
+                assert kinds["west"] == "receiver"
+                assert kinds["@controller"] == "controller"
+                assert kinds["@panel"] == "panel"
+                state, pid = db.execute(
+                    "SELECT state,pid FROM workers WHERE id='west'").fetchone()
+                assert state == "running" and pid, (state, pid)
+            deadline = time.monotonic() + 10
+            while True:
+                summary = urllib.request.urlopen(url + "/system-summary").read()
+                if b" MB" in summary:
+                    break
+                assert time.monotonic() < deadline, "no process usage sampled"
+                time.sleep(.2)
+            assert b"Supervised Processes" in summary and b"@controller" in summary
+            # The FT8 schedule dial is on 20 m.
+            assert b"Bands: <b>20m</b>" in summary, summary
             archive = Path(tmp) / "before-restore.zip"
             subprocess.run([tools, "--backup", database, gallery, archive],
                            check=True, capture_output=True)

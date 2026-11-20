@@ -11,8 +11,8 @@
 #include <thread>
 #include <vector>
 
+#include "core/schema.h"
 #include "source_offer.h"
-#include "store/store.h"
 
 namespace skim {
 namespace {
@@ -66,7 +66,7 @@ void ServeCluster(const char* database, const char* call, const char* grid,
   if (!std::regex_match(call, std::regex("[A-Z0-9/-]{2,16}")) ||
       !std::regex_match(grid, std::regex("[A-Ra-r]{2}[0-9]{2}([A-Xa-x]{2})?")))
     throw std::runtime_error("invalid station callsign or locator");
-  SaveSlot(database, "", "", 0, {});
+  InitStationSchema(database);
   sqlite3* handle = nullptr;
   int rc = sqlite3_open_v2(database, &handle, SQLITE_OPEN_READONLY, nullptr);
   std::unique_ptr<sqlite3, decltype(&sqlite3_close)> db(handle, sqlite3_close);

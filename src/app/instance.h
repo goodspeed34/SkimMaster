@@ -149,6 +149,8 @@ class SmService {
   nlohmann::json options_;
 };
 
+enum class SmRunOutcome { Stopped, Restart };
+
 // Each instance is an immutable graph in one process. Finds retain the graph;
 // enumeration and parent access borrow from it while a handle is held.
 class SmInstance : public std::enable_shared_from_this<SmInstance> {
@@ -159,7 +161,8 @@ class SmInstance : public std::enable_shared_from_this<SmInstance> {
       const SmInstanceSettings& settings);
   static std::shared_ptr<const SmInstance> FromReceiverPlan(
       const nlohmann::json& plan);
-  static void Run(const std::filesystem::path& config);
+  // Supervises the station until a signal or a full restart request.
+  static SmRunOutcome Run(const std::filesystem::path& config);
 
   const std::vector<const SmReceiver*>& receivers() const { return receivers_; }
   const std::vector<const SmService*>& services() const { return services_; }

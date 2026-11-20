@@ -21,7 +21,7 @@
 #include <thread>
 
 #include "core/clock_health.h"
-#include "store/store.h"
+#include "core/schema.h"
 
 namespace skim {
 namespace {
@@ -56,12 +56,12 @@ struct SmReception {
 class SmOutbox {
  public:
   explicit SmOutbox(const char* path) {
-    SaveSlot(path, "", "", 0, {});
     sqlite3* handle = nullptr;
     int rc = sqlite3_open(path, &handle);
     db_.reset(handle);
     Check(rc);
     Check(sqlite3_busy_timeout(handle, 5000));
+    MigrateStationSchema(handle);
   }
   std::vector<SmReception> Pending(const std::string& feed, int max_age = 180) {
     auto q = Prepare(

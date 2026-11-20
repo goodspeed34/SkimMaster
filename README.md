@@ -56,7 +56,7 @@ dial_hz = 14080000
 mode = "CW"
 ```
 
-The server prints startup, listener and worker lifecycle messages to stderr. Open the configured address and port. The Setup Wizard opens on the first visit when `first_run_wizard` is true and the receiver list is empty. The wizard saves the callsign, email, name and grid under `[station]` and adds the IQ source under `[[receivers]]`. Callsign and grid are required for station identity. Email and name are optional. Finishing setup clears the first-run flag. The Station Settings page edits the same TOML file. Receiver, schedule and service changes reload during operation. Listener and data path changes apply on a full server restart. Relative data paths resolve beside the TOML file.
+The server prints startup, listener and worker lifecycle messages to stderr. Open the configured address and port. The Setup Wizard opens on the first visit when `first_run_wizard` is true and the receiver list is empty. The wizard saves the callsign, email, name and grid under `[station]` and adds the IQ source under `[[receivers]]`. Callsign and grid are required for station identity. Email and name are optional. Finishing setup clears the first-run flag. The Station Settings page edits the same TOML file. Receiver, schedule and service changes reload during operation. Listener and data path changes apply after **Restart station** on the Restart Daemon page, or after restarting the server. Relative data paths resolve beside the TOML file.
 
 The panel has no built-in login. Anyone who can reach the configured HTTP listener can change station settings or download a backup. The default listener is loopback. Legacy `user` and `password` keys are ignored and dropped when the configuration is next saved.
 

@@ -79,6 +79,21 @@ void RegisterAdminRoutes(httplib::Server& server, SmWebContext& ctx) {
                       {"empty", false}};
         ctx.Render(*FindPage(PanelSlug(req.path)), model, res);
       });
+  server.Post("/restart-station", [&](const httplib::Request& req,
+                                      httplib::Response& res) {
+    if (!ctx.ValidateForm(req, res)) return;
+    try {
+      RequestFullRestart(ctx.database);
+      // The listener may move, so do not redirect to this address.
+      res.set_content(
+          "Station restart requested. The panel will return on the listener "
+          "configured in the station TOML.",
+          "text/plain; charset=utf-8");
+    } catch (const std::exception& error) {
+      res.status = 500;
+      res.set_content(error.what(), "text/plain; charset=utf-8");
+    }
+  });
   server.Post(R"(/(settings|wizard|restart))", [&](const httplib::Request& req,
                                                    httplib::Response& res) {
     if (!ctx.ValidateForm(req, res)) return;

@@ -41,7 +41,7 @@ void RenderDecoderPage(SmWebContext& ctx, const std::string& slug,
       "json_extract(s.value,'$.dial_hz')+1500 ELSE "
       "json_extract(s.value,'$.dial_hz') END,"
       "w.status FROM workers w,json_each(w.plan,'$.slices') s "
-      "WHERE w.id NOT LIKE '@%' AND w.status='Worker launched' ";
+      "WHERE w.kind='receiver' AND w.state='running' ";
   std::string query = allocation;
   if (slug == "cw-skimmer") query += "AND json_extract(s.value,'$.mode')='CW' ";
   if (slug == "rtty-skimmer")
@@ -162,7 +162,7 @@ void RenderReceiverStatus(SmWebContext& ctx, const SmReferencePage& page,
               "WHERE receiver=w.id AND "
               "center_hz=json_extract(w.plan,'$.center_hz') "
               "AND rate=json_extract(w.plan,'$.rate')), '—') "
-              "FROM workers w WHERE w.id NOT LIKE '@%'");
+              "FROM workers w WHERE w.kind='receiver'");
   } catch (const std::exception&) {
     // Runtime state may not be initialized when no settings snapshot
     // exists.
@@ -186,7 +186,7 @@ void RenderReceiverStatus(SmWebContext& ctx, const SmReferencePage& page,
                 "WHERE receiver=w.id AND "
                 "center_hz=json_extract(w.plan,'$.center_hz') AND "
                 "rate=json_extract(w.plan,'$.rate')), '—'),w.status "
-                "FROM workers w WHERE w.id NOT LIKE '@%' ORDER BY w.id");
+                "FROM workers w WHERE w.kind='receiver' ORDER BY w.id");
     } catch (const std::exception&) {
       // A standalone panel may have no station worker table yet.
     }
@@ -370,7 +370,7 @@ void RegisterPageRoutes(httplib::Server& server, SmWebContext& ctx) {
               Query(ctx.database,
                     "SELECT json_extract(plan,'$.options.callsign'),"
                     "json_extract(plan,'$.options.grid') FROM workers "
-                    "WHERE id LIKE '@%' ORDER BY id LIMIT 1");
+                    "WHERE kind='service' ORDER BY id LIMIT 1");
           if (!identity.empty()) {
             model["callsign"] = identity[0][0];
             model["grid"] = identity[0][1];
@@ -383,28 +383,44 @@ void RegisterPageRoutes(httplib::Server& server, SmWebContext& ctx) {
                   "printf('%g kHz',json_extract(w.plan,'$.rate')/1e3),"
                   "json_array_length(w.plan,'$.slices'),"
                   "'—',w.status "
-                  "FROM workers w WHERE w.id NOT LIKE '@%' ORDER BY w.id");
+                  "FROM workers w WHERE w.kind='receiver' ORDER BY w.id");
+        model["processes"] = Query(
+            ctx.database,
+            (std::string("SELECT w.id,w.kind,w.state,coalesce(w.pid,'—'),") +
+             kWorkerUsageSql +
+             ",w.restarts,coalesce(datetime(w.started_at,'unixepoch'),'—'),"
+             "w.status FROM workers w ORDER BY "
+             "CASE w.kind WHEN 'controller' THEN 0 WHEN 'panel' THEN 1 "
+             "WHEN 'receiver' THEN 2 ELSE 3 END,w.id")
+                .c_str());
         model["iq_throughput"] = Query(
             ctx.database,
             "SELECT printf('%.3f "
             "MSPS',coalesce(sum(json_extract(plan,'$.rate')),0)/1e6) "
-            "FROM workers WHERE id NOT LIKE '@%' AND status='Worker launched'")
-            [0][0];
+            "FROM workers WHERE kind='receiver' AND state='running'")[0][0];
         model["decoder_activity"] = Query(
             ctx.database,
-            "WITH modes(mode) AS "
-            "(VALUES('CW'),('RTTY'),('FT8'),('FT4'),('WSPR')), "
-            "counts AS (SELECT mode,count(*) total,count(DISTINCT callsign) "
-            "calls,"
-            "count(*) FILTER(WHERE utc_ms >= (unixepoch()-3600)*1000) recent "
-            "FROM spots WHERE utc_ms >= (unixepoch()-86400)*1000 GROUP BY "
-            "mode) "
-            "SELECT m.mode,(SELECT count(*) FROM workers "
-            "w,json_each(w.plan,'$.slices') s "
-            "WHERE w.status='Worker launched' AND "
-            "json_extract(s.value,'$.mode')=m.mode),"
-            "coalesce(c.recent,0),coalesce(c.total,0),coalesce(c.calls,0) "
-            "FROM modes m LEFT JOIN counts c ON m.mode=c.mode");
+            ("WITH modes(mode) AS "
+             "(VALUES('CW'),('RTTY'),('FT8'),('FT4'),('WSPR')), "
+             "counts AS (SELECT mode,count(*) total,count(DISTINCT callsign) "
+             "calls,"
+             "count(*) FILTER(WHERE utc_ms >= (unixepoch()-3600)*1000) recent "
+             "FROM spots WHERE utc_ms >= (unixepoch()-86400)*1000 GROUP BY "
+             "mode) "
+             "SELECT m.mode,(SELECT count(*) FROM workers "
+             "w,json_each(w.plan,'$.slices') s "
+             "WHERE w.kind='receiver' AND w.state='running' AND "
+             "json_extract(s.value,'$.mode')=m.mode),"
+             "coalesce(c.recent,0),coalesce(c.total,0),coalesce(c.calls,0),"
+             "coalesce((SELECT group_concat(band,', ') FROM (SELECT DISTINCT "
+             "band(" +
+             std::string(kSliceFrequencySql) +
+             ") AS band FROM workers w,json_each(w.plan,'$.slices') s "
+             "WHERE w.kind='receiver' AND w.state='running' AND "
+             "json_extract(s.value,'$.mode')=m.mode AND band IS NOT NULL "
+             "ORDER BY 1)),'—') "
+             "FROM modes m LEFT JOIN counts c ON m.mode=c.mode")
+                .c_str());
         model["feeds"] = Query(
             ctx.database,
             "SELECT coalesce((SELECT status FROM workers WHERE "

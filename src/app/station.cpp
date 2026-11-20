@@ -21,10 +21,11 @@
 #include "app/station_lock.h"
 #include "app/wideband.h"
 #include "core/database.h"
+#include "core/process_usage.h"
+#include "core/schema.h"
 #include "receiver/receiver.h"
 #include "report/cluster.h"
 #include "report/reporting.h"
-#include "store/store.h"
 #include "store/workers.h"
 
 namespace skim {
@@ -33,23 +34,37 @@ using Json = nlohmann::json;
 using Process = boost::process::v2::process;
 volatile std::sig_atomic_t stopping = 0;
 void Signal(int) { stopping = 1; }
-void Init(SmDatabase& db) {
-  db.Exec(
-      "CREATE TABLE IF NOT EXISTS station_runtime(id INTEGER PRIMARY KEY "
-      "CHECK(id=1),generation INTEGER NOT NULL)");
-  db.Exec("INSERT OR IGNORE INTO station_runtime VALUES(1,0)");
-  db.Exec(
-      "CREATE TABLE IF NOT EXISTS workers(id TEXT PRIMARY KEY,plan TEXT NOT "
-      "NULL,status TEXT NOT NULL)");
-  db.Exec(
-      "CREATE TABLE IF NOT EXISTS system_log(utc INTEGER NOT NULL,component "
-      "TEXT NOT NULL,message TEXT NOT NULL)");
-  db.Exec(
-      "CREATE TABLE IF NOT EXISTS schedule_overrides(receiver TEXT PRIMARY KEY,"
-      "schedule TEXT NOT NULL, expires INTEGER NOT NULL)");
-  db.Exec(
-      "CREATE TABLE IF NOT EXISTS worker_restarts(id TEXT PRIMARY KEY,"
-      "generation INTEGER NOT NULL)");
+void Init(SmDatabase& db) { MigrateStationSchema(db.get()); }
+
+constexpr auto kRetryDelay = std::chrono::seconds(10);
+constexpr auto kUsageInterval = std::chrono::seconds(5);
+
+struct SmRuntime {
+  int64_t generation;
+  int64_t exec_generation;
+};
+
+SmRuntime ReadRuntime(SmDatabase& db) {
+  auto query = db.Prepare(
+      "SELECT generation,exec_generation FROM station_runtime WHERE id=1");
+  if (sqlite3_step(query.get()) != SQLITE_ROW)
+    throw std::runtime_error("missing station runtime state");
+  return {sqlite3_column_int64(query.get(), 0),
+          sqlite3_column_int64(query.get(), 1)};
+}
+
+std::map<std::string, int64_t> ReadRestartRequests(SmDatabase& db) {
+  auto rows = db.Prepare("SELECT id,generation FROM worker_restarts");
+  std::map<std::string, int64_t> requests;
+  int result;
+  while ((result = sqlite3_step(rows.get())) == SQLITE_ROW) {
+    const auto* id =
+        reinterpret_cast<const char*>(sqlite3_column_text(rows.get(), 0));
+    if (id) requests[id] = sqlite3_column_int64(rows.get(), 1);
+  }
+  if (result != SQLITE_DONE)
+    throw std::runtime_error("cannot read service restart requests");
+  return requests;
 }
 
 Json ReadOverrides(SmDatabase& db) {
@@ -276,6 +291,8 @@ struct SmJob {
   Json plan;
   bool finished = false;
   std::chrono::steady_clock::time_point retry{};
+  SmWorkerRecord record;
+  SmCpuMeter cpu;
   ~SmJob();
 };
 void Stop(SmJob& job) {
@@ -301,6 +318,13 @@ void RestartStation(const char* path) {
   SmDatabase db(path);
   Init(db);
   db.Exec("UPDATE station_runtime SET generation=generation+1 WHERE id=1");
+}
+void RequestFullRestart(const char* path) {
+  SmDatabase db(path);
+  Init(db);
+  db.Exec(
+      "UPDATE station_runtime SET exec_generation=exec_generation+1 "
+      "WHERE id=1");
 }
 void RestartServiceWorker(const char* path, const std::string& service) {
   static const std::set<std::string> allowed{"cluster", "psk", "rbn",
@@ -374,7 +398,7 @@ void RunStationWorker(const char* path, const std::string& id) {
   } else
     Wideband(plan);
 }
-void SmInstance::Run(const std::filesystem::path& config) {
+SmRunOutcome SmInstance::Run(const std::filesystem::path& config) {
   auto startup = LoadSettings(config);
   const auto database = OperationalDatabasePath(startup.database);
   const auto database_name = database.string();
@@ -388,7 +412,6 @@ void SmInstance::Run(const std::filesystem::path& config) {
   const auto settings = PersistDecoderIds(config, startup);
   auto instance = FromSettings(settings);
   auto revision = settings.revision;
-  SaveSlot(path, "", "", 0, {});
   SmDatabase db(path);
   Init(db);
   SmWorkerStore workers(path);
@@ -402,38 +425,82 @@ void SmInstance::Run(const std::filesystem::path& config) {
              "SkimMasterTools";
 #endif
   std::map<std::string, SmJob> jobs;
+  stopping = 0;
   std::signal(SIGTERM, Signal);
   std::signal(SIGINT, Signal);
 #ifdef SIGBREAK
   std::signal(SIGBREAK, Signal);
 #endif
-  auto start = [&](std::vector<std::string> args) {
+  const auto now = [] { return static_cast<int64_t>(std::time(nullptr)); };
+  const auto start = [&](std::vector<std::string> args) {
     return std::make_unique<Process>(io, exe, args);
   };
+  // Records a lifecycle change for a job and mirrors it to the system log.
+  const auto transition = [&](SmJob& job, SmWorkerState state,
+                              const std::string& status) {
+    job.record.state = state;
+    job.record.status = status;
+    if (state != SmWorkerState::Running) {
+      job.record.pid.reset();
+      job.record.cpu_percent.reset();
+      job.record.rss_bytes.reset();
+    }
+    workers.Save(job.record);
+    Log(db, job.record.id == "@panel" ? "panel" : job.record.id, status);
+  };
+  // Launches a job's process, or schedules a retry if that fails.
+  const auto launch = [&](SmJob& job, std::vector<std::string> args) {
+    job.cpu = SmCpuMeter{};
+    try {
+      job.process = start(std::move(args));
+    } catch (const boost::system::system_error& error) {
+      transition(job, SmWorkerState::Failed,
+                 "Launch failed: " + std::string(error.what()));
+      job.retry = std::chrono::steady_clock::now() + kRetryDelay;
+      return;
+    }
+    if (job.record.started_at) ++job.record.restarts;
+    job.record.pid = job.process->id();
+    job.record.started_at = now();
+    transition(job, SmWorkerState::Running, "Worker launched");
+  };
+  // Collects an exited process. Returns its exit code.
+  const auto reap = [&](SmJob& job) {
+    job.process->wait();
+    const int code = job.process->exit_code();
+    job.process.reset();
+    job.retry = std::chrono::steady_clock::now() + kRetryDelay;
+    return code;
+  };
+
+  SmJob controller;
+  controller.record.id = "@controller";
+  controller.record.kind = SmWorkerKind::Controller;
+  controller.record.pid = CurrentProcessId();
+  controller.record.started_at = now();
+  controller.record.state = SmWorkerState::Running;
+  controller.record.status = "Supervising";
+  workers.Save(controller.record);
+
   SmJob panel;
+  panel.record.id = "@panel";
+  panel.record.kind = SmWorkerKind::Panel;
+
   std::string last_reload_error;
   int64_t generation = -1;
+  const int64_t exec_generation = ReadRuntime(db).exec_generation;
   std::map<std::string, int64_t> service_restarts;
+  auto next_sample = std::chrono::steady_clock::now();
+  auto outcome = SmRunOutcome::Stopped;
   while (!stopping) {
     if (panel.process && !panel.process->running()) {
-      panel.process->wait();
-      Log(db, "panel",
-          "Exited (" + std::to_string(panel.process->exit_code()) +
-              "), retrying");
-      panel.process.reset();
-      panel.retry = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+      const int code = reap(panel);
+      transition(panel, SmWorkerState::Exited,
+                 "Exited (" + std::to_string(code) + "), retrying");
     }
-    if (!panel.process && std::chrono::steady_clock::now() >= panel.retry) {
-      try {
-        panel.process =
-            start({"--station-panel", config.string(), startup.address,
-                   std::to_string(startup.port), path, gallery});
-      } catch (const boost::system::system_error& error) {
-        Log(db, "panel", "Launch failed: " + std::string(error.what()));
-        panel.retry =
-            std::chrono::steady_clock::now() + std::chrono::seconds(10);
-      }
-    }
+    if (!panel.process && std::chrono::steady_clock::now() >= panel.retry)
+      launch(panel, {"--station-panel", config.string(), startup.address,
+                     std::to_string(startup.port), path, gallery});
     try {
       auto settings = LoadSettings(config);
       if (settings.revision != revision) {
@@ -455,30 +522,19 @@ void SmInstance::Run(const std::filesystem::path& config) {
                                        (seconds / 60) % 1440, weekday,
                                        ReadOverrides(db));
     std::set<std::string> restart_requested;
-    auto restart_rows = db.Prepare("SELECT id,generation FROM worker_restarts");
-    int restart_result;
-    while ((restart_result = sqlite3_step(restart_rows.get())) == SQLITE_ROW) {
-      const auto* id = reinterpret_cast<const char*>(
-          sqlite3_column_text(restart_rows.get(), 0));
-      if (!id) continue;
-      const std::string name(id);
-      const auto token = sqlite3_column_int64(restart_rows.get(), 1);
+    for (const auto& [name, token] : ReadRestartRequests(db))
       if (token > service_restarts[name]) {
         service_restarts[name] = token;
         restart_requested.insert(name);
       }
+    const auto runtime = ReadRuntime(db);
+    if (runtime.exec_generation != exec_generation) {
+      Log(db, "controller", "Full station restart requested");
+      outcome = SmRunOutcome::Restart;
+      break;
     }
-    if (restart_result != SQLITE_DONE)
-      throw std::runtime_error("cannot read service restart requests");
-    restart_rows.reset();
-    auto runtime =
-        db.Prepare("SELECT generation FROM station_runtime WHERE id=1");
-    if (sqlite3_step(runtime.get()) != SQLITE_ROW)
-      throw std::runtime_error("missing station runtime state");
-    auto next_generation = sqlite3_column_int64(runtime.get(), 0);
-    runtime.reset();
-    bool restart = next_generation != generation;
-    generation = next_generation;
+    bool restart = runtime.generation != generation;
+    generation = runtime.generation;
     for (auto it = jobs.begin(); it != jobs.end();) {
       if (restart || restart_requested.count(it->first) ||
           !plans.contains(it->first) ||
@@ -492,40 +548,58 @@ void SmInstance::Run(const std::filesystem::path& config) {
     }
     for (auto it = plans.begin(); it != plans.end(); ++it) {
       auto& job = jobs[it.key()];
-      auto state = [&](const std::string& status) {
-        workers.Save(it.key(), it.value().dump(), status);
-        Log(db, it.key(), status);
-      };
+      if (job.record.id.empty()) {
+        job.record.id = it.key();
+        job.record.kind = it.value().contains("service")
+                              ? SmWorkerKind::Service
+                              : SmWorkerKind::Receiver;
+      }
       if (job.process && !job.process->running()) {
-        job.process->wait();
-        auto code = job.process->exit_code();
+        const int code = reap(job);
         job.finished =
             code == 0 && IsFileReceiver(job.plan.value("device", ""));
-        state(job.finished ? "WAV playback complete"
-                           : "Exited (" + std::to_string(code) + "), retrying");
-        job.process.reset();
-        job.retry = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+        if (job.finished)
+          transition(job, SmWorkerState::Finished, "WAV playback complete");
+        else
+          transition(job, SmWorkerState::Exited,
+                     "Exited (" + std::to_string(code) + "), retrying");
       }
       if (!job.process && !job.finished &&
           std::chrono::steady_clock::now() >= job.retry) {
         job.plan = it.value();
-        state("Starting allocation");
-        try {
-          job.process = start({"--station-worker", path, it.key()});
-        } catch (const boost::system::system_error& error) {
-          state("Launch failed: " + std::string(error.what()));
-          job.retry =
-              std::chrono::steady_clock::now() + std::chrono::seconds(10);
-          continue;
-        }
-        state("Worker launched");
+        job.record.plan = job.plan.dump();
+        transition(job, SmWorkerState::Starting, "Starting allocation");
+        launch(job, {"--station-worker", path, it.key()});
       }
+    }
+    if (std::chrono::steady_clock::now() >= next_sample) {
+      next_sample = std::chrono::steady_clock::now() + kUsageInterval;
+      const double wall =
+          std::chrono::duration<double>(
+              std::chrono::steady_clock::now().time_since_epoch())
+              .count();
+      auto sample = [&](SmJob& job) {
+        if (!job.record.pid || job.record.state != SmWorkerState::Running)
+          return;
+        const auto usage = SampleProcess(*job.record.pid);
+        if (!usage) return;
+        job.record.cpu_percent = job.cpu.Update(usage->cpu_seconds, wall);
+        job.record.rss_bytes = usage->memory_bytes;
+        workers.SaveUsage(job.record.id, job.record.cpu_percent,
+                          job.record.rss_bytes);
+      };
+      sample(controller);
+      sample(panel);
+      for (auto& item : jobs) sample(item.second);
     }
     std::this_thread::sleep_for(std::chrono::milliseconds(500));
   }
   for (auto& item : jobs) Stop(item.second);
   Stop(panel);
   workers.Clear();
-  Log(db, "controller", "Station stopped");
+  Log(db, "controller",
+      outcome == SmRunOutcome::Restart ? "Station restarting"
+                                       : "Station stopped");
+  return outcome;
 }
 }  // namespace skim

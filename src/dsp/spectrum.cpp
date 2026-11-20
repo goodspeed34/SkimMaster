@@ -6,17 +6,11 @@
 #include <nlohmann/json.hpp>
 
 #include "core/database.h"
+#include "core/schema.h"
 
 namespace skim {
 namespace {
 constexpr double pi = 3.14159265358979323846;
-}
-void InitSpectrum(const char* path) {
-  SmDatabase db(path);
-  db.Exec(
-      "CREATE TABLE IF NOT EXISTS spectra(receiver TEXT,utc INTEGER,center_hz "
-      "INTEGER,rate INTEGER,bins TEXT,PRIMARY "
-      "KEY(receiver,utc))");
 }
 SmSpectrum::SmSpectrum(std::string database, std::string receiver, int rate,
                        int64_t center)
@@ -24,7 +18,7 @@ SmSpectrum::SmSpectrum(std::string database, std::string receiver, int rate,
       receiver_(std::move(receiver)),
       rate_(rate),
       center_(center) {
-  InitSpectrum(database_.c_str());
+  InitStationSchema(database_.c_str());
   for (size_t i = 0; i < window_.size(); ++i)
     window_[i] = 0.5 - 0.5 * std::cos(2 * pi * i / window_.size());
 }

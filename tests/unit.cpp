@@ -3,7 +3,9 @@
 // panel's form and export helpers.
 
 #include <httplib.h>
+#include <sqlite3.h>
 
+#include <cmath>
 #include <functional>
 #include <iostream>
 #include <stdexcept>
@@ -14,6 +16,9 @@
 #include "app/instance.h"
 #include "app/slice_tuning.h"
 #include "app/station.h"
+#include "core/bands.h"
+#include "core/process_usage.h"
+#include "core/schema.h"
 #include "web/common.h"
 
 namespace {
@@ -282,6 +287,91 @@ void TestWebHelpers() {
   ExpectThrows([&] { FormDecimal(request, "gain"); },
                "form decimals must be finite");
 }
+struct SmMemoryDb {
+  SmMemoryDb() {
+    if (sqlite3_open(":memory:", &handle) != SQLITE_OK)
+      throw std::runtime_error("cannot open memory database");
+  }
+  ~SmMemoryDb() { sqlite3_close(handle); }
+  void Exec(const char* sql) {
+    if (sqlite3_exec(handle, sql, nullptr, nullptr, nullptr) != SQLITE_OK)
+      throw std::runtime_error(sqlite3_errmsg(handle));
+  }
+  std::string One(const char* sql) {
+    sqlite3_stmt* query = nullptr;
+    if (sqlite3_prepare_v2(handle, sql, -1, &query, nullptr) != SQLITE_OK)
+      throw std::runtime_error(sqlite3_errmsg(handle));
+    std::string value;
+    if (sqlite3_step(query) == SQLITE_ROW && sqlite3_column_text(query, 0))
+      value = reinterpret_cast<const char*>(sqlite3_column_text(query, 0));
+    sqlite3_finalize(query);
+    return value;
+  }
+  sqlite3* handle = nullptr;
+};
+
+void TestSchema() {
+  SmMemoryDb fresh;
+  skim::MigrateStationSchema(fresh.handle);
+  ExpectEqual(skim::StationSchemaVersion(fresh.handle),
+              skim::kStationSchemaVersion, "a new database is current");
+  skim::MigrateStationSchema(fresh.handle);
+  skim::VerifyStationSchema(fresh.handle);
+
+  // A database from before versioning, with a running service worker.
+  SmMemoryDb legacy;
+  legacy.Exec(
+      "CREATE TABLE workers(id TEXT PRIMARY KEY,plan TEXT NOT NULL,"
+      "status TEXT NOT NULL);"
+      "INSERT INTO workers VALUES('@psk','{}','Worker launched');"
+      "INSERT INTO workers VALUES('hf','{}','Worker launched');"
+      "CREATE TABLE station_runtime(id INTEGER PRIMARY KEY CHECK(id=1),"
+      "generation INTEGER NOT NULL);"
+      "INSERT INTO station_runtime VALUES(1,7);");
+  skim::MigrateStationSchema(legacy.handle);
+  skim::VerifyStationSchema(legacy.handle);
+  ExpectEqual(legacy.One("SELECT kind FROM workers WHERE id='@psk'"),
+              std::string("service"), "legacy service rows become services");
+  ExpectEqual(legacy.One("SELECT kind FROM workers WHERE id='hf'"),
+              std::string("receiver"), "legacy rows default to receivers");
+  ExpectEqual(legacy.One("SELECT generation||'/'||exec_generation FROM "
+                         "station_runtime"),
+              std::string("7/0"), "runtime counters survive the migration");
+
+  SmMemoryDb newer;
+  newer.Exec("PRAGMA user_version=999");
+  ExpectThrows([&] { skim::MigrateStationSchema(newer.handle); },
+               "a newer schema is refused");
+
+  SmMemoryDb loose;
+  loose.Exec(
+      "CREATE TABLE spots(receiver,utc_ms,mode,frequency_hz,message,callsign,"
+      "grid)");
+  skim::MigrateStationSchema(loose.handle);
+  ExpectThrows([&] { skim::VerifyStationSchema(loose.handle); },
+               "a spots table without its constraints is rejected");
+}
+
+void TestBandsAndUsage() {
+  ExpectEqual(std::string(skim::BandName(14074000)), std::string("20m"),
+              "20 m");
+  ExpectEqual(std::string(skim::BandName(1840000)), std::string("160m"),
+              "160 m");
+  ExpectEqual(std::string(skim::BandName(144174000)), std::string("2m"), "2 m");
+  Expect(skim::BandName(15000000).empty(), "WWV is outside amateur bands");
+
+  skim::SmCpuMeter meter;
+  Expect(!meter.Update(1.0, 10.0), "one sample has no rate");
+  auto percent = meter.Update(1.5, 12.0);
+  Expect(percent && std::abs(*percent - 25.0) < 1e-9,
+         "half a CPU second over two seconds is 25%");
+  Expect(!meter.Update(1.0, 13.0), "a reset CPU counter is not a rate");
+
+  auto self = skim::SampleProcess(skim::CurrentProcessId());
+  Expect(self && self->memory_bytes > 0 && self->cpu_seconds >= 0,
+         "the test process can sample itself");
+  Expect(!skim::SampleProcess(0x7ffffff0), "a missing process has no usage");
+}
 }  // namespace
 
 int main() {
@@ -292,6 +382,8 @@ int main() {
       {"slice coverage", TestSliceCoverage},
       {"validation", TestValidation},
       {"web helpers", TestWebHelpers},
+      {"schema", TestSchema},
+      {"bands and usage", TestBandsAndUsage},
   };
   for (const auto& [name, test] : tests) {
     try {

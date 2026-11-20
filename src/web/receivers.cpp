@@ -72,7 +72,7 @@ void RenderReceiverEditor(SmWebContext& ctx, const httplib::Request& req,
     std::optional<int64_t> tuned;
     for (const auto& row : Query(ctx.database,
                                  "SELECT id,json_extract(plan,'$.center_hz') "
-                                 "FROM workers WHERE id NOT LIKE '@%'"))
+                                 "FROM workers WHERE kind='receiver'"))
       if (row[0] == Escape(name.c_str()) && row[1] != "")
         tuned = std::stoll(row[1].get<std::string>());
     if (!tuned) tuned = source->configured_center();
@@ -247,7 +247,7 @@ void RegisterReceiverRoutes(httplib::Server& server, SmWebContext& ctx) {
       } else {
         for (const auto& row : Query(ctx.database,
                                      "SELECT json_extract(plan,'$.device') "
-                                     "FROM workers WHERE id NOT LIKE '@%'"))
+                                     "FROM workers WHERE kind='receiver'"))
           if (row[0] == Escape(device.c_str()))
             throw std::runtime_error(
                 "Disable this receiver and wait for its allocation to stop "

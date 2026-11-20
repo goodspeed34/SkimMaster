@@ -16,7 +16,7 @@
 
 #include "app/station_lock.h"
 #include "core/database.h"
-#include "store/store.h"
+#include "core/schema.h"
 
 namespace skim {
 namespace {
@@ -196,9 +196,10 @@ void RestoreStation(const char* archive, const char* path,
       "SELECT receiver,utc_ms,mode,frequency_hz,message,callsign,grid FROM "
       "spots LIMIT 0");
   check.reset();
-  // Exercise the storage migration and prepare the production insert statements
-  // on the extracted copy before touching the operator's files.
-  SaveSlot(source.c_str(), "", "", 0, {});
+  // Migrate the extracted copy before touching the operator's files. This
+  // also rejects snapshots written by a newer schema.
+  MigrateStationSchema(src.get());
+  VerifyStationSchema(src.get());
   if (fs::exists(database)) {
     auto before =
         database_name + ".pre-restore-" +

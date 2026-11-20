@@ -5,6 +5,8 @@
 #include <memory>
 #include <stdexcept>
 
+#include "core/schema.h"
+
 namespace skim {
 void SaveSlot(const char* database, const char* receiver, const char* mode,
               int64_t utc_ms, const std::vector<SmSpot>& spots, bool live) {
@@ -19,24 +21,8 @@ void SaveSlot(const char* database, const char* receiver, const char* mode,
   auto exec = [&](const char* sql) {
     check(sqlite3_exec(handle, sql, nullptr, nullptr, nullptr));
   };
+  MigrateStationSchema(handle);
   exec("BEGIN IMMEDIATE");
-  exec(
-      "CREATE TABLE IF NOT EXISTS spots(receiver TEXT NOT NULL, utc_ms INTEGER "
-      "NOT NULL,"
-      "mode TEXT NOT NULL, frequency_hz INTEGER NOT NULL, message TEXT NOT "
-      "NULL,"
-      "callsign TEXT, grid TEXT, "
-      "UNIQUE(receiver,utc_ms,mode,frequency_hz,message))");
-  exec("CREATE INDEX IF NOT EXISTS spots_time ON spots(utc_ms)");
-  exec(
-      "CREATE TABLE IF NOT EXISTS live_receptions(spot_id INTEGER PRIMARY KEY, "
-      "snr REAL,speed REAL)");
-  exec(
-      "CREATE TABLE IF NOT EXISTS report_receipts(feed TEXT NOT NULL,spot_id "
-      "INTEGER NOT NULL,sent_at INTEGER NOT NULL,PRIMARY KEY(feed,spot_id))");
-  exec(
-      "CREATE TABLE IF NOT EXISTS wspr_details(spot_id INTEGER PRIMARY "
-      "KEY,dial INTEGER,dt REAL,power TEXT)");
   sqlite3_stmt* details = nullptr;
   check(sqlite3_prepare_v2(handle, "INSERT INTO wspr_details VALUES(?,?,?,?)",
                            -1, &details, nullptr));

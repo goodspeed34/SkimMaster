@@ -27,6 +27,12 @@ using Json = nlohmann::json;
 constexpr int64_t kMaxFrequency = 1000000000000LL;
 constexpr int64_t kMaxIndex = 1024 * 1024;
 
+// SQL for the RF reference of slice s on worker w, given json_each over the
+// worker plan's slices: the slice center for CW and RTTY, else the dial.
+extern const char kSliceFrequencySql[];
+// SQL formatting a worker row's CPU and memory, or an em dash.
+extern const char kWorkerUsageSql[];
+
 std::string Escape(const char* value);
 std::optional<int64_t> FormInteger(const httplib::Request& req, const char* key,
                                    int64_t min, int64_t max,
@@ -39,7 +45,8 @@ std::optional<SmSliceSettings> FormSlice(const httplib::Request& req);
 std::string EditReceiverUrl(const std::string& receiver);
 std::string UtcMinute(int minute);
 int FormTime(const httplib::Request& req, const char* key);
-// Runs a read-only query. With html set, every cell is HTML-escaped.
+// Runs a read-only query. With html set, every cell is HTML-escaped. The
+// connection provides band(hz), which names the amateur band holding hz.
 Json Query(const char* database, const char* sql,
            const std::vector<std::string>& parameters = {}, bool html = true);
 std::string CsvDocument(const Json& columns, const Json& rows);

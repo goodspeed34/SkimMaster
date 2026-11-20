@@ -28,7 +28,7 @@ socket_deps = []
 if host_machine.system() == 'windows'
   cpp = meson.get_compiler('cpp')
   socket_deps = [cpp.find_library('ws2_32'), cpp.find_library('mswsock'),
-    cpp.find_library('crypt32')]
+    cpp.find_library('crypt32'), cpp.find_library('psapi')]
 endif
 deps = [
   csdr_dep,
@@ -75,6 +75,8 @@ sources = files(
   'src/app/station.cpp',
   'src/app/wideband.cpp',
   'src/core/clock_health.cpp',
+  'src/core/process_usage.cpp',
+  'src/core/schema.cpp',
   'src/core/plugin_modules.cpp',
   'src/decoder/session.cpp',
   'src/decoder/slot.cpp',
@@ -131,6 +133,7 @@ test('local control panel', find_program('python3'), args : [files('tests/panel.
 test('RTTY stream', find_program('python3'), args : [files('tests/text_modes.py'), exe])
 test('reporting protocols', find_program('python3'), args : [files('tests/reporting.py'), exe,
   meson.project_source_root() / 'subprojects/ft8_lib/test/wav/191111_110130.wav'])
+test('full station restart', find_program('python3'), args : [files('tests/restart.py'), server])
 test('station lifecycle', find_program('python3'), args : [files('tests/station.py'), server, exe])
 test('snapshot restore', find_program('python3'), args : [files('tests/backup.py'), exe,
   meson.project_source_root() / 'subprojects/ft8_lib/test/wav/191111_110130.wav'])

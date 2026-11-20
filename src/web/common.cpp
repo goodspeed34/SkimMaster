@@ -23,6 +23,7 @@
 #include <stdexcept>
 
 #include "app/slice_tuning.h"
+#include "core/bands.h"
 #include "receiver/receiver.h"
 #include "source_offer.h"
 #include "web/panel_assets.h"
@@ -126,6 +127,31 @@ int FormTime(const httplib::Request& req, const char* key) {
     throw std::runtime_error(std::string("invalid UTC ") + key);
   return std::stoi(value.substr(0, 2)) * 60 + std::stoi(value.substr(3));
 }
+const char kSliceFrequencySql[] =
+    "CASE WHEN json_extract(s.value,'$.mode') IN ('CW','RTTY') THEN "
+    "coalesce(json_extract(s.value,'$.center_hz'),"
+    "json_extract(s.value,'$.dial_hz'),json_extract(w.plan,'$.center_hz')) "
+    "ELSE json_extract(s.value,'$.dial_hz') END";
+const char kWorkerUsageSql[] =
+    "CASE WHEN w.cpu_percent IS NULL AND w.rss_bytes IS NULL THEN '—' ELSE "
+    "coalesce(printf('%.1f%%',w.cpu_percent),'—')||' · '||"
+    "coalesce(printf('%.1f MB',w.rss_bytes/1048576.0),'—') END";
+
+namespace {
+void BandFunction(sqlite3_context* context, int, sqlite3_value** values) {
+  if (sqlite3_value_type(values[0]) == SQLITE_NULL) {
+    sqlite3_result_null(context);
+    return;
+  }
+  const auto band = BandName(sqlite3_value_int64(values[0]));
+  if (band.empty())
+    sqlite3_result_null(context);
+  else
+    sqlite3_result_text(context, band.data(), static_cast<int>(band.size()),
+                        SQLITE_STATIC);
+}
+}  // namespace
+
 Json Query(const char* database, const char* sql,
            const std::vector<std::string>& parameters, bool html) {
   sqlite3* handle = nullptr;
@@ -133,6 +159,10 @@ Json Query(const char* database, const char* sql,
   std::unique_ptr<sqlite3, decltype(&sqlite3_close)> db(handle, sqlite3_close);
   if (rc != SQLITE_OK) throw std::runtime_error(sqlite3_errmsg(handle));
   sqlite3_busy_timeout(handle, 5000);
+  if (sqlite3_create_function(handle, "band", 1,
+                              SQLITE_UTF8 | SQLITE_DETERMINISTIC, nullptr,
+                              BandFunction, nullptr, nullptr) != SQLITE_OK)
+    throw std::runtime_error(sqlite3_errmsg(handle));
   sqlite3_stmt* query = nullptr;
   if (sqlite3_prepare_v2(handle, sql, -1, &query, nullptr) != SQLITE_OK)
     throw std::runtime_error(sqlite3_errmsg(handle));
@@ -291,19 +321,40 @@ void SmWebContext::Render(const SmReferencePage& page, Json model,
             "SELECT id,printf('%.3f',json_extract(plan,'$.center_hz')/1e6),"
             "printf('%g',json_extract(plan,'$.rate')/1e3),"
             "json_array_length(plan,'$.slices') FROM workers "
-            "WHERE id NOT LIKE '@%' AND status='Worker launched' ORDER BY id");
+            "WHERE kind='receiver' AND state='running' ORDER BY id");
   model["receivers"] = live;
   int slices = 0;
   for (const auto& receiver : live)
     slices += std::stoi(receiver[3].get<std::string>());
   model["slice_count"] = slices;
-  model["bands"] = "—";
-  model["cpu_load"] = "—";
+  const auto bands =
+      Query(this->database,
+            (std::string("SELECT coalesce(group_concat(band,', '),'—') FROM "
+                         "(SELECT DISTINCT band(") +
+             kSliceFrequencySql +
+             ") AS band FROM workers w,json_each(w.plan,'$.slices') s "
+             "WHERE w.kind='receiver' AND w.state='running' AND band IS NOT "
+             "NULL ORDER BY 1)")
+                .c_str());
+  model["bands"] = bands[0][0];
+  const auto usage = Query(
+      this->database,
+      "SELECT CASE WHEN count(cpu_percent)=0 AND count(rss_bytes)=0 THEN '—' "
+      "ELSE coalesce(printf('%.1f%%',sum(cpu_percent)),'—')||' · '||"
+      "coalesce(printf('%.1f MB',sum(rss_bytes)/1048576.0),'—') END,"
+      "(SELECT unixepoch()-started_at FROM workers WHERE id='@controller') "
+      "FROM workers WHERE state='running'");
+  model["cpu_load"] = usage[0][0];
   model["version"] = SKIM_VERSION;
   model["source_url"] = Escape(SKIM_SOURCE_URL);
-  auto count = std::chrono::duration_cast<std::chrono::seconds>(
-                   std::chrono::steady_clock::now() - this->panel_start)
-                   .count();
+  // The supervisor's start time is the station uptime. A standalone panel
+  // has no supervisor, so fall back to the panel's own uptime.
+  const auto& station_uptime = usage[0][1].get_ref<const std::string&>();
+  auto count = !station_uptime.empty()
+                   ? std::max<int64_t>(0, std::stoll(station_uptime))
+                   : std::chrono::duration_cast<std::chrono::seconds>(
+                         std::chrono::steady_clock::now() - this->panel_start)
+                         .count();
   model["uptime"] = count;
   std::ostringstream uptime;
   uptime << count / 86400 << "d " << std::setfill('0') << std::setw(2)

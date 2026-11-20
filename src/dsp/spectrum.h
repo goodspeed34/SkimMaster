@@ -17,5 +17,4 @@ class SmSpectrum {
   int64_t next_ = 0;
   std::array<double, 256> window_{};
 };
-void InitSpectrum(const char* db);
 }  // namespace skim

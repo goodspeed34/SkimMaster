@@ -9,7 +9,7 @@
   <tr><th colspan="4">Daemon &amp; Station Information</th></tr>
   <tr><td class="label-col" style="width:22%;">Station Callsign:</td><td style="width:28%;"><b>{{ callsign }}</b> (Grid: <b>{{ grid }}</b>)</td><td class="label-col" style="width:22%;">System Time (UTC):</td><td style="width:28%;"><b class="mono js-utc">{{ utc }}</b></td></tr>
   <tr><td class="label-col">Core Engine Version:</td><td>Skim Master v{{ version }}</td><td class="label-col">System Uptime:</td><td>{{ uptime_label }}</td></tr>
-  <tr><td class="label-col">CPU / Memory Load:</td><td>{{ cpu_load }}</td><td class="label-col">Total IQ Throughput:</td><td>{{ iq_throughput }}</td></tr>
+  <tr><td class="label-col">CPU / Memory (all processes):</td><td>{{ cpu_load }}</td><td class="label-col">Total IQ Throughput:</td><td>{{ iq_throughput }}</td></tr>
 </table>
 <table class="cfg-table">
   <tr><th colspan="7">Active Receivers Status</th></tr>
@@ -18,10 +18,16 @@
   {% if length(receiver_status) == 0 %}<tr><td colspan="7">No active receivers.</td></tr>{% endif %}
 </table>
 <table class="cfg-table">
+  <tr><th colspan="8">Supervised Processes</th></tr>
+  <tr><th>Worker</th><th>Kind</th><th>State</th><th class="num">PID</th><th>CPU · Memory</th><th class="num">Restarts</th><th>Started (UTC)</th><th>Status</th></tr>
+  {% for row in processes %}<tr><td><b>{{ row.0 }}</b></td><td>{{ row.1 }}</td><td>{{ row.2 }}</td><td class="num mono">{{ row.3 }}</td><td class="mono">{{ row.4 }}</td><td class="num mono">{{ row.5 }}</td><td class="mono">{{ row.6 }}</td><td>{{ row.7 }}</td></tr>{% endfor %}
+  {% if length(processes) == 0 %}<tr><td colspan="8">No supervised processes. The panel is running without a station supervisor.</td></tr>{% endif %}
+</table>
+<table class="cfg-table">
   <tr><th colspan="6">Decoder Engines Activity (24h Window)</th></tr>
   <tr><th>Mode</th><th>Allocated Slices</th><th>Active Bands</th><th class="num">Spots (Last 1h)</th><th class="num">Spots (24h Total)</th><th class="num">Unique Calls</th></tr>
   {% for row in decoder_activity %}
-  <tr><td><b>{{ row.0 }}</b></td><td>{{ row.1 }}</td><td>—</td><td class="num mono">{{ row.2 }}</td><td class="num mono">{{ row.3 }}</td><td class="num mono">{{ row.4 }}</td></tr>
+  <tr><td><b>{{ row.0 }}</b></td><td>{{ row.1 }}</td><td>{{ row.5 }}</td><td class="num mono">{{ row.2 }}</td><td class="num mono">{{ row.3 }}</td><td class="num mono">{{ row.4 }}</td></tr>
   {% endfor %}
 </table>
 <table class="cfg-table">
@@ -123,7 +129,8 @@
 <p>Download a ZIP snapshot of the station database and SSTV gallery.</p>
 <form method="post" action="/backup"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="btn-native">Download station snapshot</button></form>
 {% else if page == "restart-daemon" %}
-<form method="post" action="/restart"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="btn-native">Restart all workers</button></form>
+<form method="post" action="/restart" class="action-bar"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="btn-native">Restart all workers</button> Recycles receiver and service workers.</form>
+<form method="post" action="/restart-station" class="action-bar"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="btn-native">Restart station</button> Restarts the supervisor and panel and applies listener and data-path changes.</form>
 {% else %}
 <form method="post" action="/settings"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="revision" value="{{ revision }}">
 <label>Station TOML<br><textarea name="config" rows="22" cols="72">{{ config }}</textarea></label><br><button class="btn-native">Save settings</button></form>

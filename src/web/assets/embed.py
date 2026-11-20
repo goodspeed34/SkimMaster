@@ -30,8 +30,10 @@ help_overrides = {
         "current worker state, recent spectrum timestamps, slice counts and recent stored spots.</p>"
         "<p><b>Clock:</b> The displayed UTC comes from the server clock. Live FT8, FT4 and "
         "WSPR workers check clock synchronization before timed decoding.</p>"
-        "<p><b>Receiver and decoder totals:</b> Throughput and active slice counts reflect "
-        "workers currently launched. CPU, memory and active-band values remain placeholders.</p>"
+        "<p><b>Processes:</b> The supervisor samples CPU (percent of one core) and resident "
+        "memory for itself, the panel and each worker every five seconds. Restarts count "
+        "relaunches since the allocation started.</p>"
+        "<p><b>Bands:</b> Amateur bands covered by the slices of running receivers.</p>"
         "<p><b>Recent spots:</b> Shows the last five stored results. Use Live Spot Stream or a "
         "mode page to view a larger filtered list.</p>"
     ),
@@ -176,8 +178,9 @@ help_overrides = {
     "restart-daemon": (
         "<p><b>Restart all workers:</b> This action recycles receiver and reporting "
         "workers so they reload the current configuration. The web server and controller stay running.</p>"
-        "<p><b>Full server restart:</b> Restart the SkimMaster process outside the panel to "
-        "apply listener or data-path changes.</p>"
+        "<p><b>Restart station:</b> Stops every worker and the panel, then starts the station "
+        "again from its TOML file. Listener address, port and data-path changes take effect. "
+        "The panel is unavailable for a few seconds and may move to the new listener.</p>"
     ),
 }
 for slug, section in sections:
