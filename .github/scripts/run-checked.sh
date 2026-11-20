@@ -9,7 +9,9 @@ trap 'rm -f "$log"' EXIT
 status=$?
 if (( status != 0 )); then
   excerpt=$(tail -n 90 "$log")
-  excerpt=${excerpt: -12000}
+  if (( ${#excerpt} > 12000 )); then
+    excerpt=${excerpt: -12000}
+  fi
   excerpt=${excerpt//%/%25}
   excerpt=${excerpt//$'\r'/%0D}
   excerpt=${excerpt//$'\n'/%0A}
