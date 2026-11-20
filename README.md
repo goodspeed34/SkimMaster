@@ -113,7 +113,7 @@ The equivalent `[services.cluster]`, `[services.psk]`, `[services.wsprnet]` and 
 ./build/SkimMasterTools --restore snapshot.zip station.sqlite gallery
 ```
 
-Station Settings also offers a snapshot download. Restore validates the archive before changing the database and takes a pre-restore snapshot when replacing an existing database. Stop the station before restoring. Keep the station TOML separately from the database and gallery archive.
+**Backup & Restore** downloads a snapshot, restores an uploaded one and downloads a diagnostics bundle for bug reports, with email, operator name and RBN sign-in redacted. A panel restore validates the upload, then restarts the station to apply it. Offline restore with `SkimMasterTools --restore` requires the station to be stopped. Either way, restore validates the archive before changing the database and takes a pre-restore snapshot beside it. **Factory reset** requires typing RESET, saves a snapshot, then clears the database and SSTV images; it replaces the TOML with the first-run sample only when selected. Keep the station TOML separately from the database and gallery archive.
 
 ## Replay
 

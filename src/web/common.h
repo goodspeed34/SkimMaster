@@ -55,6 +55,10 @@ std::optional<int64_t> GalleryDateStart(const std::string& value,
                                         const char* field);
 std::string GalleryUtc(int64_t timestamp_us);
 const SmReferencePage* FindPage(const std::string& slug);
+// Streams a temporary file as a download. The response keeps it alive.
+void SendTemporaryFile(httplib::Response& res,
+                       std::shared_ptr<const std::filesystem::path> file,
+                       const std::string& filename);
 std::string PanelSlug(const std::string& path);
 
 struct SmSettingsSnapshot {
@@ -104,6 +108,7 @@ struct SmWebContext {
   const std::string token;
   std::mutex config_writes;
   std::mutex probe_mutex;
+  std::mutex maintenance;
   const std::chrono::steady_clock::time_point panel_start =
       std::chrono::steady_clock::now();
   SmSettingsCache settings_cache;
@@ -125,6 +130,10 @@ void RenderSchedules(SmWebContext& ctx, const httplib::Request& req,
 void RenderGallery(SmWebContext& ctx, const SmReferencePage& page,
                    const httplib::Request& req, httplib::Response& res,
                    Json model);
+
+// Whether a station supervisor is running for this database. A standalone
+// panel has none, so restart requests would never be served.
+bool SupervisorRunning(const SmWebContext& ctx);
 
 void RegisterReceiverRoutes(httplib::Server& server, SmWebContext& ctx);
 void RegisterScheduleRoutes(httplib::Server& server, SmWebContext& ctx);

@@ -126,8 +126,24 @@
 </form>
 {% endif %}
 {% else if page == "backup-restore" %}
-<p>Download a ZIP snapshot of the station database and SSTV gallery.</p>
-<form method="post" action="/backup"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="btn-native">Download station snapshot</button></form>
+<table class="cfg-table">
+  <tr><th colspan="2">Snapshot</th></tr>
+  <tr><td class="label-col" style="width:30%;">Download:</td><td><form method="post" action="/backup"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="btn-native">Download station snapshot</button> Database and SSTV gallery as a ZIP.</form></td></tr>
+  <tr><td class="label-col">Restore:</td><td><form method="post" action="/restore" enctype="multipart/form-data"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="file" name="snapshot" accept=".zip,application/zip" required> <button class="btn-native">Validate and restore</button></form>
+  The station validates the snapshot, saves a snapshot of the current data beside the database, then restarts to restore it.</td></tr>
+</table>
+<table class="cfg-table">
+  <tr><th colspan="2">Diagnostics</th></tr>
+  <tr><td class="label-col" style="width:30%;">Bundle:</td><td><form method="post" action="/diagnostics"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="btn-native">Download diagnostics</button> Redacted station TOML, worker state, recent system log, versions, plugins and recent spectra. No receptions or images.</form></td></tr>
+</table>
+<table class="cfg-table">
+  <tr><th colspan="2">Factory Reset</th></tr>
+  <tr><td class="label-col" style="width:30%;">Reset station data:</td><td><form method="post" action="/factory-reset"><input type="hidden" name="csrf" value="{{ csrf }}">
+  <label>Type <b>RESET</b> to confirm <input name="confirm" size="8" autocomplete="off" required pattern="RESET"></label>
+  <label><input type="checkbox" name="configuration"> Also replace the station TOML with the first-run sample</label>
+  <button class="btn-native">Factory reset</button></form>
+  Saves a snapshot beside the database, then deletes receptions, logs and SSTV images and restarts. The TOML is kept unless selected; a copy is kept when it is replaced.</td></tr>
+</table>
 {% else if page == "restart-daemon" %}
 <form method="post" action="/restart" class="action-bar"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="btn-native">Restart all workers</button> Recycles receiver and service workers.</form>
 <form method="post" action="/restart-station" class="action-bar"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="btn-native">Restart station</button> Restarts the supervisor and panel and applies listener and data-path changes.</form>

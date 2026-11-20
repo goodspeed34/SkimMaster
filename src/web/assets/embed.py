@@ -172,8 +172,12 @@ help_overrides = {
     "backup-restore": (
         "<p><b>Snapshot:</b> Download a ZIP containing a consistent SQLite database snapshot "
         "and SSTV gallery images.</p>"
-        "<p><b>Restore:</b> Use SkimMasterTools offline to validate and restore a snapshot. "
-        "Stop the station first and keep the TOML configuration separately.</p>"
+        "<p><b>Restore:</b> Upload a snapshot to validate it and restart the station into it. "
+        "The current data is saved beside the database first. Offline, use "
+        "SkimMasterTools --restore with the station stopped. Snapshots do not include the TOML.</p>"
+        "<p><b>Diagnostics:</b> A bundle for bug reports. Email, operator name and RBN sign-in "
+        "are redacted.</p>"
+        "<p><b>Factory reset:</b> Requires typing RESET. A snapshot is saved first.</p>"
     ),
     "restart-daemon": (
         "<p><b>Restart all workers:</b> This action recycles receiver and reporting "

@@ -71,6 +71,11 @@ struct SmScheduleSettings {
   std::optional<SmSliceSettings> slice;
 };
 
+// Station TOML or JSON with operator email, name, RBN sign-in and legacy
+// login values replaced, for diagnostics that may be shared.
+std::string RedactedSettings(const std::string& source);
+nlohmann::json RedactedJson(nlohmann::json value);
+
 void CreateDefaultSettings(const std::filesystem::path& file);
 SmInstanceSettings LoadSettings(const std::filesystem::path& file);
 SmInstanceSettings PersistDecoderIds(const std::filesystem::path& file,

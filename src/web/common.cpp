@@ -4,6 +4,7 @@
 #include <sqlite3.h>
 
 #include <algorithm>
+#include <array>
 #include <cctype>
 #include <charconv>
 #include <chrono>
@@ -278,6 +279,43 @@ std::string PanelSlug(const std::string& path) {
   };
   auto alias = aliases.find(path);
   return alias != aliases.end() ? alias->second : path.substr(1);
+}
+
+void SendTemporaryFile(httplib::Response& res,
+                       std::shared_ptr<const std::filesystem::path> file,
+                       const std::string& filename) {
+  struct SmDownload {
+    std::shared_ptr<const std::filesystem::path> file;
+    std::ifstream stream;
+  };
+  auto download = std::make_shared<SmDownload>(
+      SmDownload{file, std::ifstream(*file, std::ios::binary)});
+  if (!download->stream)
+    throw std::runtime_error("cannot open " + filename + " for download");
+  res.set_header("Content-Disposition", "attachment; filename=" + filename);
+  res.set_content_provider(
+      std::filesystem::file_size(*file), "application/zip",
+      [download](size_t offset, size_t length, httplib::DataSink& sink) {
+        auto& stream = download->stream;
+        stream.clear();
+        stream.seekg(offset);
+        std::array<char, 65536> buffer;
+        while (length) {
+          auto count = std::min(length, buffer.size());
+          if (!stream.read(buffer.data(), count) ||
+              !sink.write(buffer.data(), count))
+            return false;
+          length -= count;
+        }
+        return true;
+      });
+}
+
+bool SupervisorRunning(const SmWebContext& ctx) {
+  return !Query(ctx.database,
+                "SELECT 1 FROM workers WHERE id='@controller' AND "
+                "state='running'")
+              .empty();
 }
 
 SmSettingsSnapshot SmSettingsCache::Read() {

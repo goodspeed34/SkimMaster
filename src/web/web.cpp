@@ -33,7 +33,23 @@ void Serve(const char* config, const char* address, int port,
   std::filesystem::create_directories(gallery);
   httplib::Server server;
   server.new_task_queue = [] { return new httplib::ThreadPool(4); };
-  server.set_payload_max_length(1024 * 1024);
+  // Snapshot uploads stream to disk and may be large. Every other request
+  // body is read into memory, so keep those small.
+  constexpr size_t kMaxFormBytes = 1024 * 1024;
+  constexpr size_t kMaxUploadBytes = 9ULL << 30;
+  server.set_payload_max_length(kMaxUploadBytes);
+  server.set_pre_routing_handler(
+      [](const httplib::Request& req, httplib::Response& res) {
+        if (req.method != "POST" || req.path == "/restore")
+          return httplib::Server::HandlerResponse::Unhandled;
+        const auto length = req.get_header_value_u64("Content-Length");
+        if (req.has_header("Transfer-Encoding") || length > kMaxFormBytes) {
+          res.status = 413;
+          res.set_content("Request body too large.", "text/plain");
+          return httplib::Server::HandlerResponse::Handled;
+        }
+        return httplib::Server::HandlerResponse::Unhandled;
+      });
   std::array<unsigned char, 32> random{};
   if (RAND_bytes(random.data(), random.size()) != 1)
     throw std::runtime_error("could not initialize session token");

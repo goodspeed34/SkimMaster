@@ -21,6 +21,7 @@
 #include <stdexcept>
 
 #include "app/backup.h"
+#include "app/diagnostics.h"
 #include "app/slice_tuning.h"
 #include "app/station.h"
 #include "source_offer.h"
@@ -133,40 +134,113 @@ void RegisterAdminRoutes(httplib::Server& server, SmWebContext& ctx) {
         res.set_content(e.what(), "text/plain");
     }
   });
-  server.Post("/backup", [&](const httplib::Request& req,
-                             httplib::Response& res) {
+  server.Post(
+      "/backup", [&](const httplib::Request& req, httplib::Response& res) {
+        if (!ctx.ValidateForm(req, res)) return;
+        try {
+          SendTemporaryFile(res, TemporarySnapshot(ctx.database, ctx.gallery),
+                            "station-snapshot.zip");
+        } catch (const std::exception& error) {
+          res.status = 500;
+          res.set_content(error.what(), "text/plain");
+        }
+      });
+  server.Post(
+      "/diagnostics", [&](const httplib::Request& req, httplib::Response& res) {
+        if (!ctx.ValidateForm(req, res)) return;
+        try {
+          SendTemporaryFile(
+              res, TemporaryDiagnostics(ctx.config, ctx.database, ctx.gallery),
+              "skimmaster-diagnostics.zip");
+        } catch (const std::exception& error) {
+          res.status = 500;
+          res.set_content(error.what(), "text/plain");
+        }
+      });
+  server.Post("/restore", [&](const httplib::Request& req,
+                              httplib::Response& res,
+                              const httplib::ContentReader& reader) {
+    res.set_header("Cache-Control", "no-store");
+    const auto database = std::filesystem::path(ctx.database);
+    const auto pending = PendingRestorePath(database);
+    const auto upload = pending.string() + ".upload";
+    auto fail = [&](int status, const std::string& message) {
+      std::error_code ignored;
+      std::filesystem::remove(upload, ignored);
+      res.status = status;
+      res.set_content(message, "text/plain; charset=utf-8");
+    };
+    if (!req.is_multipart_form_data())
+      return fail(400, "Upload the snapshot as a form file.");
+    std::unique_lock<std::mutex> lock(ctx.maintenance, std::try_to_lock);
+    if (!lock) return fail(409, "Another restore or reset is in progress.");
+    std::string csrf, part;
+    std::ofstream out;
+    bool forged = false, received = false;
+    // The CSRF field precedes the file in the form, so a forged upload is
+    // refused before anything is written.
+    const bool read = reader(
+        [&](const httplib::MultipartFormData& field) {
+          part = field.name;
+          if (part != "snapshot") return true;
+          if (csrf != ctx.token) {
+            forged = true;
+            return false;
+          }
+          out.open(upload, std::ios::binary | std::ios::trunc);
+          received = static_cast<bool>(out);
+          return received;
+        },
+        [&](const char* data, size_t length) {
+          if (part == "csrf") {
+            csrf.append(data, length);
+            return csrf.size() <= ctx.token.size();
+          }
+          if (part == "snapshot") out.write(data, length);
+          return part != "snapshot" || static_cast<bool>(out);
+        });
+    out.close();
+    if (forged || (!received && csrf != ctx.token))
+      return fail(403, "This form expired. Reload the page and try again.");
+    if (!read || !received || !out)
+      return fail(400, "The snapshot upload did not complete.");
+    try {
+      if (!SupervisorRunning(ctx))
+        throw std::runtime_error(
+            "No station supervisor is running. Restore offline with "
+            "SkimMasterTools --restore.");
+      ValidateSnapshot(upload.c_str());
+      std::filesystem::rename(upload, pending);
+      RequestFullRestart(ctx.database);
+    } catch (const std::exception& error) {
+      return fail(400, std::string("Snapshot rejected: ") + error.what());
+    }
+    res.set_content(
+        "Snapshot validated. The station is restarting to restore it; a "
+        "snapshot of the current data is kept beside the database. Check the "
+        "System Log for the result.",
+        "text/plain; charset=utf-8");
+  });
+  server.Post("/factory-reset", [&](const httplib::Request& req,
+                                    httplib::Response& res) {
     if (!ctx.ValidateForm(req, res)) return;
     try {
-      auto archive = TemporarySnapshot(ctx.database, ctx.gallery);
-      struct SmDownload {
-        std::shared_ptr<const std::filesystem::path> archive;
-        std::ifstream stream;
-      };
-      auto download = std::make_shared<SmDownload>(
-          SmDownload{archive, std::ifstream(*archive, std::ios::binary)});
-      if (!download->stream)
-        throw std::runtime_error("cannot open snapshot for download");
-      res.set_header("Content-Disposition",
-                     "attachment; filename=station-snapshot.zip");
-      res.set_content_provider(
-          std::filesystem::file_size(*archive), "application/zip",
-          [download](size_t offset, size_t length, httplib::DataSink& sink) {
-            auto& stream = download->stream;
-            stream.clear();
-            stream.seekg(offset);
-            std::array<char, 65536> buffer;
-            while (length) {
-              auto count = std::min(length, buffer.size());
-              if (!stream.read(buffer.data(), count) ||
-                  !sink.write(buffer.data(), count))
-                return false;
-              length -= count;
-            }
-            return true;
-          });
+      if (req.get_param_value("confirm") != "RESET")
+        throw std::runtime_error("Type RESET to confirm the factory reset.");
+      if (!SupervisorRunning(ctx))
+        throw std::runtime_error("No station supervisor is running.");
+      std::lock_guard<std::mutex> lock(ctx.maintenance);
+      const auto marker = PendingResetPath(std::filesystem::path(ctx.database));
+      std::ofstream(marker, std::ios::trunc)
+          << Json{{"configuration", req.has_param("configuration")}}.dump();
+      RequestFullRestart(ctx.database);
+      res.set_content(
+          "Factory reset requested. The station saves a snapshot beside the "
+          "database, clears its data and restarts.",
+          "text/plain; charset=utf-8");
     } catch (const std::exception& error) {
-      res.status = 500;
-      res.set_content(error.what(), "text/plain");
+      res.status = 400;
+      res.set_content(error.what(), "text/plain; charset=utf-8");
     }
   });
 }

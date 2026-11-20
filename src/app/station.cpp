@@ -314,6 +314,12 @@ SmJob::~SmJob() {
 }
 }  // namespace
 void ValidateStation(const Json& config) { Validate(config); }
+void LogStation(const char* path, const std::string& component,
+                const std::string& message) {
+  SmDatabase db(path);
+  Init(db);
+  Log(db, component, message);
+}
 void RestartStation(const char* path) {
   SmDatabase db(path);
   Init(db);

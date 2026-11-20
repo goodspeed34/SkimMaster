@@ -254,7 +254,47 @@ SmInstanceSettings Parse(const fs::path& file, std::string source) {
           std::move(source),
           revision};
 }
+bool IsPrivateSetting(std::string_view key) {
+  return key == "email" || key == "sign_in" || key == "user" ||
+         key == "password";
+}
+
+void RedactTable(toml::table& table) {
+  for (auto&& [key, value] : table) {
+    if (IsPrivateSetting(key.str()) && value.is_string())
+      value.as_string()->get() = "<redacted>";
+    else if (auto* child = value.as_table())
+      RedactTable(*child);
+    else if (auto* array = value.as_array())
+      for (auto& item : *array)
+        if (auto* entry = item.as_table()) RedactTable(*entry);
+  }
+}
 }  // namespace
+
+std::string RedactedSettings(const std::string& source) {
+  auto table = toml::parse(source);
+  RedactTable(table);
+  // Schedule names stay; the operator's name does not.
+  if (auto* name = table["station"]["name"].as_string())
+    name->get() = "<redacted>";
+  std::ostringstream out;
+  out << toml::toml_formatter{table} << '\n';
+  return out.str();
+}
+
+nlohmann::json RedactedJson(nlohmann::json value) {
+  if (value.is_object()) {
+    for (auto it = value.begin(); it != value.end(); ++it)
+      if (IsPrivateSetting(it.key()) && it->is_string())
+        *it = "<redacted>";
+      else
+        *it = RedactedJson(std::move(*it));
+  } else if (value.is_array()) {
+    for (auto& item : value) item = RedactedJson(std::move(item));
+  }
+  return value;
+}
 
 void CreateDefaultSettings(const fs::path& file) {
   // Exclusive creation preserves an existing file even if two servers start

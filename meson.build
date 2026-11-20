@@ -67,7 +67,9 @@ endif
 
 subdir('src/web')
 sources = files(
+  'src/app/archive.cpp',
   'src/app/backup.cpp',
+  'src/app/diagnostics.cpp',
   'src/app/instance.cpp',
   'src/app/live.cpp',
   'src/app/replay.cpp',
@@ -134,6 +136,8 @@ test('RTTY stream', find_program('python3'), args : [files('tests/text_modes.py'
 test('reporting protocols', find_program('python3'), args : [files('tests/reporting.py'), exe,
   meson.project_source_root() / 'subprojects/ft8_lib/test/wav/191111_110130.wav'])
 test('full station restart', find_program('python3'), args : [files('tests/restart.py'), server])
+test('panel restore, diagnostics and reset', find_program('python3'),
+  args : [files('tests/maintenance.py'), server])
 test('station lifecycle', find_program('python3'), args : [files('tests/station.py'), server, exe])
 test('snapshot restore', find_program('python3'), args : [files('tests/backup.py'), exe,
   meson.project_source_root() / 'subprojects/ft8_lib/test/wav/191111_110130.wav'])

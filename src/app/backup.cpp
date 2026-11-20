@@ -8,12 +8,15 @@
 #include <chrono>
 #include <filesystem>
 #include <fstream>
+#include <iostream>
 #include <memory>
 #include <nlohmann/json.hpp>
-#include <random>
 #include <regex>
 #include <set>
 
+#include "app/archive.h"
+#include "app/config.h"
+#include "app/station.h"
 #include "app/station_lock.h"
 #include "core/database.h"
 #include "core/schema.h"
@@ -21,25 +24,6 @@
 namespace skim {
 namespace {
 namespace fs = std::filesystem;
-using Zip = std::unique_ptr<zip_t, decltype(&zip_discard)>;
-class SmScratch {
- public:
-  explicit SmScratch(const fs::path& base) {
-    for (int i = 0; i < 10; ++i) {
-      path = base / (".skimmaster-" + std::to_string(std::random_device{}()));
-      if (fs::create_directory(path)) {
-        fs::permissions(path, fs::perms::owner_all, fs::perm_options::replace);
-        return;
-      }
-    }
-    throw std::runtime_error("cannot reserve temporary directory");
-  }
-  ~SmScratch() {
-    std::error_code ec;
-    fs::remove_all(path, ec);
-  }
-  fs::path path;
-};
 void CopyDatabase(sqlite3* source, sqlite3* target) {
   auto handle = sqlite3_backup_init(target, "main", source, "main");
   if (!handle) throw std::runtime_error(sqlite3_errmsg(target));
@@ -47,20 +31,6 @@ void CopyDatabase(sqlite3* source, sqlite3* target) {
   int finish = sqlite3_backup_finish(handle);
   if (rc != SQLITE_DONE || finish != SQLITE_OK)
     throw std::runtime_error(sqlite3_errmsg(target));
-}
-Zip OpenZip(const fs::path& path, int flags) {
-  int err = 0;
-  Zip zip(zip_open(path.string().c_str(), flags, &err), zip_discard);
-  if (!zip) throw std::runtime_error("cannot open archive: " + path.string());
-  return zip;
-}
-void Add(zip_t* zip, const fs::path& path, const std::string& name) {
-  auto source = zip_source_file(zip, path.string().c_str(), 0, -1);
-  if (!source) throw std::runtime_error(zip_strerror(zip));
-  if (zip_file_add(zip, name.c_str(), source, ZIP_FL_ENC_UTF_8) < 0) {
-    zip_source_free(source);
-    throw std::runtime_error(zip_strerror(zip));
-  }
 }
 void Extract(zip_t* zip, zip_uint64_t i, const fs::path& target,
              uint64_t size) {
@@ -109,12 +79,12 @@ void BackupStation(const char* path, const char* gallery, const char* archive) {
   }
   uint64_t total = 0, entries = 2;
   CountEntry("station.sqlite", fs::file_size(snapshot), total);
-  Add(zip.get(), snapshot, "station.sqlite");
+  AddZipFile(zip.get(), snapshot, "station.sqlite");
   std::ofstream(temp.path / "manifest.json")
       << "{\"format\":\"SkimMaster\",\"version\":1}";
   CountEntry("manifest.json", fs::file_size(temp.path / "manifest.json"),
              total);
-  Add(zip.get(), temp.path / "manifest.json", "manifest.json");
+  AddZipFile(zip.get(), temp.path / "manifest.json", "manifest.json");
   if (fs::exists(gallery))
     for (const auto& file : fs::directory_iterator(gallery)) {
       auto name = file.path().filename().string();
@@ -123,33 +93,23 @@ void BackupStation(const char* path, const char* gallery, const char* archive) {
         if (++entries > kMaxEntries)
           throw std::runtime_error("snapshot exceeds 100000 entries");
         CountEntry("gallery/" + name, fs::file_size(file.path()), total);
-        Add(zip.get(), file.path(), "gallery/" + name);
+        AddZipFile(zip.get(), file.path(), "gallery/" + name);
       }
     }
-  if (zip_close(zip.get()) != 0)
-    throw std::runtime_error(zip_strerror(zip.get()));
-  zip.release();
+  CloseZip(zip);
 }
 std::shared_ptr<const fs::path> TemporarySnapshot(const char* path,
                                                   const char* gallery) {
-  struct SmSnapshot {
-    SmScratch scratch{fs::temp_directory_path()};
-    fs::path archive = scratch.path / "station-snapshot.zip";
-  };
-  auto snapshot = std::make_shared<SmSnapshot>();
-  BackupStation(path, gallery, snapshot->archive.string().c_str());
-  return {snapshot, &snapshot->archive};
+  auto archive = TemporaryFile("station-snapshot.zip");
+  BackupStation(path, gallery, archive->string().c_str());
+  return archive;
 }
-void RestoreStation(const char* archive, const char* path,
-                    const char* gallery) {
-  const auto database = OperationalDatabasePath(path);
-  const auto database_name = database.string();
-  std::string lockfile = StationLockPath(database).string();
-  std::ofstream(lockfile, std::ios::app).close();
-  boost::interprocess::file_lock lock(lockfile.c_str());
-  if (!lock.try_lock())
-    throw std::runtime_error("stop the station before restoring");
-  SmScratch temp(fs::temp_directory_path());
+namespace {
+// Extracts and validates a snapshot into directory: entry names and sizes,
+// the manifest, SQLite integrity and the station schema. The extracted
+// database is migrated to this build's schema. Returns the entry names.
+std::set<std::string> ExtractSnapshot(const char* archive,
+                                      const fs::path& directory) {
   auto zip = OpenZip(archive, ZIP_RDONLY | ZIP_CHECKCONS);
   auto count = zip_get_num_entries(zip.get(), 0);
   if (count < 2 || static_cast<uint64_t>(count) > kMaxEntries)
@@ -167,18 +127,17 @@ void RestoreStation(const char* archive, const char* path,
         !names.insert(name).second)
       throw std::runtime_error("unexpected archive entry");
     CountEntry(name, stat.size, total);
-    auto destination = temp.path / name;
+    auto destination = directory / name;
     fs::create_directories(destination.parent_path());
     Extract(zip.get(), i, destination, stat.size);
   }
   if (!names.count("manifest.json") || !names.count("station.sqlite"))
     throw std::runtime_error("incomplete snapshot");
-  std::ifstream manifest(temp.path / "manifest.json");
+  std::ifstream manifest(directory / "manifest.json");
   auto metadata = nlohmann::json::parse(manifest);
   if (metadata.at("format") != "SkimMaster" || metadata.at("version") != 1)
     throw std::runtime_error("unsupported snapshot");
-  auto source = (temp.path / "station.sqlite").string();
-  SmDatabase src(source.c_str());
+  SmDatabase src((directory / "station.sqlite").string().c_str());
   src.Exec("PRAGMA trusted_schema=OFF");
   auto verify = src.Prepare("PRAGMA integrity_check");
   if (sqlite3_step(verify.get()) != SQLITE_ROW ||
@@ -192,20 +151,58 @@ void RestoreStation(const char* archive, const char* path,
   if (sqlite3_step(schema.get()) != SQLITE_DONE)
     throw std::runtime_error("unsupported snapshot schema");
   schema.reset();
-  auto check = src.Prepare(
-      "SELECT receiver,utc_ms,mode,frequency_hz,message,callsign,grid FROM "
-      "spots LIMIT 0");
-  check.reset();
   // Migrate the extracted copy before touching the operator's files. This
   // also rejects snapshots written by a newer schema.
   MigrateStationSchema(src.get());
   VerifyStationSchema(src.get());
+  return names;
+}
+
+// Holds the station lock, so no supervisor can run during maintenance.
+class SmMaintenanceLock {
+ public:
+  explicit SmMaintenanceLock(const fs::path& database)
+      : path_(StationLockPath(database).string()) {
+    std::ofstream(path_, std::ios::app).close();
+    lock_ = boost::interprocess::file_lock(path_.c_str());
+    if (!lock_.try_lock())
+      throw std::runtime_error("stop the station before restoring");
+  }
+
+ private:
+  std::string path_;
+  boost::interprocess::file_lock lock_;
+};
+
+std::string Stamp() {
+  return std::to_string(std::chrono::duration_cast<std::chrono::seconds>(
+                            std::chrono::system_clock::now().time_since_epoch())
+                            .count());
+}
+
+void RemoveDatabaseFiles(const fs::path& database) {
+  for (const char* suffix : {"", "-journal", "-wal", "-shm"})
+    fs::remove(database.string() + suffix);
+}
+}  // namespace
+
+void ValidateSnapshot(const char* archive) {
+  SmScratch temp(fs::temp_directory_path());
+  ExtractSnapshot(archive, temp.path);
+}
+
+std::string RestoreStation(const char* archive, const char* path,
+                           const char* gallery) {
+  const auto database = OperationalDatabasePath(path);
+  const auto database_name = database.string();
+  SmMaintenanceLock lock(database);
+  SmScratch temp(fs::temp_directory_path());
+  const auto names = ExtractSnapshot(archive, temp.path);
+  const auto source = (temp.path / "station.sqlite").string();
+  SmDatabase src(source.c_str());
+  std::string before;
   if (fs::exists(database)) {
-    auto before =
-        database_name + ".pre-restore-" +
-        std::to_string(
-            std::chrono::system_clock::now().time_since_epoch().count()) +
-        ".zip";
+    before = database_name + ".pre-restore-" + Stamp() + ".zip";
     BackupStation(database_name.c_str(), gallery, before.c_str());
   }
   fs::create_directories(gallery);
@@ -235,6 +232,91 @@ void RestoreStation(const char* archive, const char* path,
   } catch (...) {
     for (const auto& file : added) fs::remove(file);
     throw;
+  }
+  return before;
+}
+
+std::string FactoryReset(const char* path, const char* gallery,
+                         const std::filesystem::path& config,
+                         bool configuration) {
+  const auto database = OperationalDatabasePath(path);
+  const auto database_name = database.string();
+  SmMaintenanceLock lock(database);
+  const auto stamp = Stamp();
+  std::string before;
+  if (fs::exists(database)) {
+    before = database_name + ".pre-reset-" + stamp + ".zip";
+    BackupStation(database_name.c_str(), gallery, before.c_str());
+  }
+  RemoveDatabaseFiles(database);
+  std::error_code ignored;
+  for (const auto& file : fs::directory_iterator(gallery, ignored))
+    if (fs::is_regular_file(file.symlink_status()) &&
+        std::regex_match(file.path().filename().string(), kImage))
+      fs::remove(file.path());
+  if (configuration) {
+    fs::copy_file(config, config.string() + ".pre-reset-" + stamp + ".toml");
+    fs::remove(config);
+    CreateDefaultSettings(config);
+  }
+  return before;
+}
+
+fs::path PendingRestorePath(const fs::path& database) {
+  return database.string() + ".pending-restore.zip";
+}
+
+fs::path PendingResetPath(const fs::path& database) {
+  return database.string() + ".pending-reset.json";
+}
+
+void ApplyPendingMaintenance(const fs::path& config) {
+  const auto settings = LoadSettings(config);
+  const auto database = OperationalDatabasePath(settings.database);
+  const auto database_name = database.string();
+  const auto restore = PendingRestorePath(database);
+  const auto reset = PendingResetPath(database);
+  auto record = [&](const std::string& message) {
+    std::cerr << "[maintenance] " << message << '\n';
+    LogStation(database_name.c_str(), "maintenance", message);
+  };
+  if (fs::exists(reset)) {
+    bool configuration = false;
+    try {
+      std::ifstream in(reset);
+      configuration = nlohmann::json::parse(in).value("configuration", false);
+    } catch (const std::exception&) {
+    }
+    fs::remove(reset);
+    fs::remove(restore);
+    try {
+      const auto before =
+          FactoryReset(database_name.c_str(), settings.gallery.c_str(), config,
+                       configuration);
+      record(std::string("Factory reset") +
+             (configuration ? " including station configuration" : "") +
+             (before.empty() ? "" : "; previous data saved to " + before));
+    } catch (const std::exception& error) {
+      record(std::string("Factory reset failed: ") + error.what());
+    }
+    return;
+  }
+  if (!fs::exists(restore)) return;
+  // Claim the upload so a failure is not retried on every start.
+  const auto claimed = restore.string() + ".applying";
+  fs::rename(restore, claimed);
+  try {
+    const auto before = RestoreStation(claimed.c_str(), database_name.c_str(),
+                                       settings.gallery.c_str());
+    fs::remove(claimed);
+    record("Restored snapshot uploaded from the panel" +
+           (before.empty() ? std::string()
+                           : "; previous data saved to " + before));
+  } catch (const std::exception& error) {
+    const auto failed = restore.string() + ".failed";
+    fs::rename(claimed, failed);
+    record(std::string("Snapshot restore failed: ") + error.what() +
+           "; the upload was kept as " + failed);
   }
 }
 }  // namespace skim
