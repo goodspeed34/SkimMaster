@@ -43,12 +43,16 @@ jobs:
             toolchain:p meson:p ninja:p pkgconf:p cmake:p boost:p nng:p fftw:p
             sqlite:p inja:p nlohmann-json:p libsndfile:p libpng:p libzip:p
             openssl:p soapysdr:p portaudio:p python:p
-      - name: Build, test and install
+      - name: Configure
         run: |
-          meson setup build --buildtype=release --force-fallback-for=csdr,morsedec --prefix="$(cygpath -m "$RUNNER_TEMP")/SkimMaster"
-          meson compile -C build
-          meson test -C build --print-errorlogs --suite SkimMaster
-          meson install -C build --no-rebuild
-          python tests/plugin_sdk.py "$(cygpath -m "$RUNNER_TEMP")/SkimMaster"
+          bash .github/scripts/run-checked.sh meson setup build --buildtype=release --force-fallback-for=csdr,morsedec --prefix="$(cygpath -m "$RUNNER_TEMP")/SkimMaster"
+      - name: Build
+        run: bash .github/scripts/run-checked.sh meson compile -C build
+      - name: Test
+        run: bash .github/scripts/run-checked.sh meson test -C build --print-errorlogs --suite SkimMaster
+      - name: Install and test installed modules
+        run: |
+          bash .github/scripts/run-checked.sh meson install -C build --no-rebuild
+          bash .github/scripts/run-checked.sh python tests/plugin_sdk.py "$(cygpath -m "$RUNNER_TEMP")/SkimMaster"
           installed="$(cygpath -u "$RUNNER_TEMP")/SkimMaster/bin"
-          python tests/wav_receiver.py "$installed/SkimMasterTools.exe" "$installed/SkimMaster.exe" subprojects/ft8_lib/test/wav/191111_110130.wav
+          bash .github/scripts/run-checked.sh python tests/wav_receiver.py "$installed/SkimMasterTools.exe" "$installed/SkimMaster.exe" subprojects/ft8_lib/test/wav/191111_110130.wav
