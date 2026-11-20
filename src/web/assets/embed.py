@@ -139,10 +139,13 @@ help_overrides = {
         "the current results as CSV. A decode records reception, not a two-way contact.</p>"
     ),
     "band-mode-activity": (
-        "<p><b>Activity:</b> Counts stored results and distinct callsigns by receiver and mode. "
-        "Counts are grouped by receiver and mode.</p>"
-        "<p><b>Filters and export:</b> Filter by receiver, mode and callsign prefix, then "
-        "download matching groups as CSV.</p>"
+        "<p><b>Heatmap:</b> Cell color represents the number of stored decodes in that band and "
+        "mode. It is not a signal-strength measurement. Bands follow the decoded RF frequency.</p>"
+        "<p><b>Normalization:</b> Absolute counts compare raw activity; percentage views expose "
+        "which mode dominates a band regardless of total volume.</p>"
+        "<p><b>Hourly grid:</b> Decodes per UTC hour of day across the selected window, useful "
+        "for gray-line and propagation planning.</p>"
+        "<p><b>Export:</b> Downloads the band &times; mode matrix as absolute counts.</p>"
     ),
     "noise-floor": (
         "<p><b>Noise Floor:</b> Each running receiver records the median power of its unoccupied "

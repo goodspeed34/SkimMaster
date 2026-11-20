@@ -120,6 +120,39 @@ with tempfile.TemporaryDirectory() as directory:
         assert b"invalid threshold" in bad_threshold
         with closing(sqlite3.connect(db)) as connection, connection:
             connection.execute("DELETE FROM noise_floor")
+        now_ms = int(time.time() * 1000)
+        activity = [("hf", now_ms - 1000, "FT8", 14074500, "CQ A1AA", "A1AA"),
+                    ("hf", now_ms - 2000, "FT8", 14075000, "CQ B1BB", "B1BB"),
+                    ("hf", now_ms - 3000, "FT8", 14075500, "A1AA B1BB", "A1AA"),
+                    ("lf", now_ms - 4000, "CW", 7030000, "K1CW", "K1CW"),
+                    ("lf", now_ms - 5000, "CW", 7031000, "K2CW", "K2CW"),
+                    ("lf", now_ms - 6000, "RTTY", 13000000, "CQ X", "X1X")]
+        with closing(sqlite3.connect(db)) as connection, connection:
+            connection.executemany(
+                "INSERT INTO spots(receiver,utc_ms,mode,frequency_hz,message,"
+                "callsign) VALUES(?,?,?,?,?,?)", activity)
+        bands = get("/band-mode-activity").decode()
+        matrix = bands[bands.index('id="band-matrix"'):bands.index('id="hour-heatmap"')]
+        assert re.search(r"<b>40m</b></td><td class=\"num heat-1\">2</td>", matrix), matrix
+        assert re.search(r"<b>20m</b></td>(<td[^>]*>[^<]*</td>){2}<td class=\"num heat-1\">3</td>", matrix), matrix
+        assert "<b>Out of band</b>" in matrix
+        assert matrix.index("<b>40m</b>") < matrix.index("<b>20m</b>") < matrix.index("Out of band")
+        assert "<td class=\"num\"><b>6</b></td>" in matrix, matrix
+        totals = bands[bands.index('id="mode-totals"'):]
+        assert re.search(r"<b>FT8</b></td><td class=\"num mono\">3</td>.*?bar-fill orange.*? 50\.0%</td><td class=\"num mono\">2</td>", totals, re.S), totals
+        cw_only = get("/band-mode-activity?applied=1&include_CW=on&normalize=band&display=numeric").decode()
+        cw_matrix = cw_only[cw_only.index('id="band-matrix"'):cw_only.index('id="hour-heatmap"')]
+        assert "<th class=\"num\">CW</th><th class=\"num\">Total</th>" in cw_matrix, cw_matrix
+        assert "100.0%" in cw_matrix and "heat-" not in cw_only.split('id="mode-totals"')[0].split('id="band-matrix"')[1]
+        assert "20m" not in cw_matrix
+        receiver_only = get("/band-mode-activity?receiver=hf").decode()
+        assert "40m" not in receiver_only.split('id="band-matrix"')[1].split('id="hour-heatmap"')[0]
+        matrix_csv = get("/band-mode-activity?format=csv").decode()
+        assert matrix_csv.startswith('"Band","CW","RTTY","FT8","FT4","WSPR","Total"'), matrix_csv
+        assert '"20m","0","0","3","0","0","3"' in matrix_csv, matrix_csv
+        assert '"Out of band","0","1","0","0","0","1"' in matrix_csv, matrix_csv
+        with closing(sqlite3.connect(db)) as connection, connection:
+            connection.execute("DELETE FROM spots WHERE utc_ms>=?", (now_ms - 10000,))
         assert b'canvas id="chart"' in get("/spectrum-waterfall")
         assert get("/style.css") == source("style.css")
         assert b"CQ R7IW LN35" in html and b"&lt;antenna&gt;" in html

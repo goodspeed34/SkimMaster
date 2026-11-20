@@ -18,7 +18,40 @@
   {% if length(noise_rows) == 0 %}<tr><td colspan="8">No noise-floor history yet. Receivers record a value each minute while they run.</td></tr>{% endif %}
 </table>
 {% for alert in noise_alerts %}<div class="notice notice-warn"><b>Threshold notice:</b> {{ alert }}</div>{% endfor %}
-<p class="notice notice-info">The noise floor is the median power of unoccupied FFT bins, excluding carriers and the band edges, as a density relative to a full-scale signal. Convert to dBm/Hz with your receiver's calibration.</p>
+<p class="notice notice-info" id="noise-method">The noise floor is the median power of unoccupied FFT bins, excluding carriers and the band edges, as a density relative to a full-scale signal. Convert to dBm/Hz with your receiver's calibration.</p>
+{% else if page == "band-mode-activity" %}
+<form method="get" action="/band-mode-activity">
+<input type="hidden" name="applied" value="1">
+<table class="cfg-table">
+  <tr><th colspan="4">Activity Window</th></tr>
+  <tr><td class="label-col" style="width:15%;">Period:</td><td style="width:35%;"><select name="period"><option value="1h"{% if period == "1h" %} selected{% endif %}>Last 1 hour</option><option value="24h"{% if period == "24h" %} selected{% endif %}>Last 24 hours</option><option value="7d"{% if period == "7d" %} selected{% endif %}>Last 7 days</option><option value="30d"{% if period == "30d" %} selected{% endif %}>Last 30 days</option></select></td>
+  <td class="label-col" style="width:15%;">Include:</td><td>{% for mode in activity_modes %}<label{% if not loop.is_first %} class="hint-inline"{% endif %}><input type="checkbox" name="include_{{ mode.name }}"{% if mode.checked %} checked{% endif %}> {{ mode.name }}</label> {% endfor %}</td></tr>
+  <tr><td class="label-col">Normalize:</td><td><select name="normalize"><option value="count"{% if normalize == "count" %} selected{% endif %}>Absolute spot count</option><option value="band"{% if normalize == "band" %} selected{% endif %}>Per-band percentage</option><option value="mode"{% if normalize == "mode" %} selected{% endif %}>Per-mode percentage</option></select></td>
+  <td class="label-col">Display:</td><td><select name="display"><option value="heatmap"{% if not numeric %} selected{% endif %}>Heatmap</option><option value="numeric"{% if numeric %} selected{% endif %}>Numeric only</option></select></td></tr>
+  <tr><td class="label-col">Receiver:</td><td colspan="3"><select name="receiver"><option value=""{% if selected_receiver == "" %} selected{% endif %}>All receivers</option>{% for source in activity_sources %}<option value="{{ source }}"{% if selected_receiver == source %} selected{% endif %}>{{ source }}</option>{% endfor %}</select> <button class="btn-native">Apply</button> <button class="btn-native" name="format" value="csv"><b>Export Matrix (.csv)</b></button></td></tr>
+</table>
+</form>
+<table class="cfg-table" id="band-matrix">
+  <tr><th colspan="{{ length(included_modes) + 2 }}">Band &times; Mode Spot Counts ({{ period_label }})</th></tr>
+  <tr><th>Band</th>{% for mode in included_modes %}<th class="num">{{ mode }}</th>{% endfor %}<th class="num">Total</th></tr>
+  {% for row in matrix_rows %}<tr><td><b>{{ row.band }}</b></td>{% for cell in row.cells %}<td class="num{% if cell.heat >= 0 %} heat-{{ cell.heat }}{% endif %}">{{ cell.text }}</td>{% endfor %}<td class="num"><b>{{ row.total }}</b></td></tr>{% endfor %}
+  {% if length(matrix_rows) == 0 %}<tr><td colspan="{{ length(included_modes) + 2 }}">No decodes in this window.</td></tr>{% else %}
+  <tr><td><b>All bands</b></td>{% for cell in matrix_total.cells %}<td class="num{% if cell.heat >= 0 %} heat-{{ cell.heat }}{% endif %}"><b>{{ cell.text }}</b></td>{% endfor %}<td class="num"><b>{{ matrix_total.total }}</b></td></tr>{% endif %}
+</table>
+{% if not numeric %}<div class="small" style="margin-bottom:12px;">Heat scale: <span class="legend-swatch" style="background:#FFFFFF;"></span>0 <span class="legend-swatch" style="background:#E4ECF6;"></span>1&ndash;99 <span class="legend-swatch" style="background:#B9CCE3;"></span>100&ndash;999 <span class="legend-swatch" style="background:#7E9BC4;"></span>1,000&ndash;4,999 <span class="legend-swatch" style="background:#262362;"></span>5,000+</div>{% endif %}
+<div class="table-scroll">
+<table class="cfg-table" id="hour-heatmap">
+  <tr><th colspan="25">Hourly Activity {% if numeric %}Counts{% else %}Heatmap{% endif %} &mdash; UTC ({{ period_label }})</th></tr>
+  <tr><th>Band</th>{% for hour in ["00","01","02","03","04","05","06","07","08","09","10","11","12","13","14","15","16","17","18","19","20","21","22","23"] %}<th>{{ hour }}</th>{% endfor %}</tr>
+  {% for row in hour_rows %}<tr><td class="small"><b>{{ row.band }}</b></td>{% for cell in row.cells %}<td{% if cell.heat >= 0 %} class="heat-{{ cell.heat }}"{% else %} class="num mono"{% endif %} title="{{ cell.title }}">{{ cell.count }}</td>{% endfor %}</tr>{% endfor %}
+  {% if length(hour_rows) == 0 %}<tr><td colspan="25">No decodes in this window.</td></tr>{% endif %}
+</table>
+</div>
+<table class="cfg-table" id="mode-totals">
+  <tr><th colspan="5">Mode Totals &mdash; {{ period_label }}</th></tr>
+  <tr><th>Mode</th><th class="num">Spots</th><th>Share</th><th class="num">Unique Calls</th><th>Peak Hour</th></tr>
+  {% for row in mode_rows %}<tr><td><b>{{ row.mode }}</b></td><td class="num mono">{{ row.spots }}</td><td><span class="bar-track" style="width:180px;"><span class="bar-fill {{ row.bar }}" style="width:{{ row.width }};"></span></span> {{ row.share }}</td><td class="num mono">{{ row.unique }}</td><td class="mono">{{ row.peak }}</td></tr>{% endfor %}
+</table>
 {% else %}
 {% if exists("config_error") %}{% if config_error != "" %}
 <div class="notice notice-warn" role="alert"><b>Station configuration could not be loaded.</b> {{ config_error }} {{ config_recovery_guidance }}</div>

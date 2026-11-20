@@ -133,6 +133,10 @@ The wizard selects **Repeat WAV playback** by default. Set `repeat = true` in TO
 
 **Spectrum / Waterfall** shades the passband of each running slice. Click the trace to add a slice there: CW and RTTY center their slice on the clicked frequency, and FT8, FT4 and WSPR set the USB dial 1500 Hz below it so the signal falls mid-passband. Adjust the frequency or mode before saving. The slice is added to the receiver's manual slices, or to its schedule-attached slices if it runs on schedules, and the receiver restarts to apply it.
 
+## Band and mode activity
+
+**Band & Mode Activity** counts stored decodes by amateur band (from the decoded RF frequency) and mode over the last hour, day, week or 30 days. It shows a band × mode matrix with heat shading, absolute counts or per-band or per-mode percentages, an hourly UTC heatmap per band, and mode totals with share, unique calls and peak hour. Filter by receiver and mode, and export the matrix as CSV.
+
 ## Noise floor
 
 Each running receiver records its noise floor once a minute as the median power of its unoccupied FFT bins, excluding carriers and the band edges. The value is a density in dBFS/Hz, so receivers with different sample rates compare directly; add your receiver's calibration to read dBm/Hz. **Noise Floor Analysis** charts the last 24 hours per receiver with optional smoothing, lists per-band minimum, average and maximum with a six-hour trend, counts minutes above an optional alert threshold, and exports the minute values as CSV. System Summary shows each receiver's latest value.

@@ -488,6 +488,9 @@ void RegisterPageRoutes(httplib::Server& server, SmWebContext& ctx) {
                  slug == "rtty-skimmer" || slug == "digital-decoders") {
         RenderDecoderPage(ctx, slug, *page, req, res, std::move(model));
         return;
+      } else if (slug == "band-mode-activity") {
+        RenderBandActivity(ctx, *page, req, res, std::move(model));
+        return;
       } else if (slug == "noise-floor") {
         RenderNoiseFloor(ctx, *page, req, res, std::move(model));
         return;
@@ -495,7 +498,7 @@ void RegisterPageRoutes(httplib::Server& server, SmWebContext& ctx) {
         RenderReceiverStatus(ctx, *page, settings_view, res, std::move(model));
         return;
       } else if (slug == "live-spot-stream" || slug == "heard-stations" ||
-                 slug == "system-log" || slug == "band-mode-activity") {
+                 slug == "system-log") {
         RenderTablePage(ctx, slug, *page, req, res, std::move(model));
         return;
       } else {

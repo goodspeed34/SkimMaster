@@ -151,6 +151,9 @@ void RegisterGalleryRoutes(httplib::Server& server, SmWebContext& ctx);
 void RegisterPageRoutes(httplib::Server& server, SmWebContext& ctx);
 void RegisterDecoderRoutes(httplib::Server& server, SmWebContext& ctx);
 void RegisterAnalysisRoutes(httplib::Server& server, SmWebContext& ctx);
+void RenderBandActivity(SmWebContext& ctx, const SmReferencePage& page,
+                        const httplib::Request& req, httplib::Response& res,
+                        Json model);
 void RenderNoiseFloor(SmWebContext& ctx, const SmReferencePage& page,
                       const httplib::Request& req, httplib::Response& res,
                       Json model);
