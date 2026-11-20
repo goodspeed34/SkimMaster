@@ -45,6 +45,11 @@ ABIs are versioned separately by their exported symbol names.
 - CSV exports keep negative numbers numeric; other cells starting with a
   formula character are still prefixed with an apostrophe.
 
+- Receiver plugin ABI v3: `skim_receiver_v3` and `skim_receiver_descriptor_v3`
+  replace the v2 symbols. `Capture` takes an `SmCaptureSink` whose `state`
+  callback reports the applied center, rate and gain; the host logs it and
+  holds IQ while the device is off plan. Descriptors gain `reports_state`.
+  SoapySDR reports its applied tuning. Rebuild external receivers.
 - Slot decoder plugin ABI v3: `skim_slot_decoder_v3` replaces
   `skim_slot_decoder_v2`. Metadata declares settings, and `start` and the
   `SmBuiltinSlotDecoder` callback receive resolved values. Rebuild external

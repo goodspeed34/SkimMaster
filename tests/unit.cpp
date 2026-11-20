@@ -26,6 +26,7 @@
 #include "core/schema.h"
 #include "decoder/settings.h"
 #include "dsp/spectrum.h"
+#include "receiver/receiver.h"
 #include "web/common.h"
 
 namespace {
@@ -509,6 +510,20 @@ void TestNoiseFloor() {
   std::filesystem::remove(path);
 }
 
+void TestReceiverState() {
+  const skim::SmReceiverCaptureRequest request{"x", 14074000, 192000, {}, {}};
+  Expect(skim::StateMismatch(request, {}).empty(),
+         "an empty report matches any request");
+  Expect(skim::StateMismatch(request, {14074000, 192000, 30.0}).empty(),
+         "gain differences do not hold IQ");
+  ExpectEqual<std::string>(skim::StateMismatch(request, {7074000, {}, {}}),
+                           "the center returns to 14074000 Hz",
+                           "a retuned center holds IQ");
+  ExpectEqual<std::string>(skim::StateMismatch(request, {{}, 96000, {}}),
+                           "the rate returns to 192000 Hz",
+                           "a different rate holds IQ");
+}
+
 int main() {
   const std::pair<const char*, void (*)()> tests[] = {
       {"schedule windows", TestScheduleWindows},
@@ -521,6 +536,7 @@ int main() {
       {"bands and usage", TestBandsAndUsage},
       {"decoder settings", TestDecoderSettings},
       {"noise floor", TestNoiseFloor},
+      {"receiver state", TestReceiverState},
   };
   for (const auto& [name, test] : tests) {
     try {

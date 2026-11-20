@@ -120,25 +120,25 @@ class SmRtlTcpReceiverPlugin final : public SmReceiverPlugin {
     ProbeDevices(selector, found);
   }
 
-  void Capture(const SmReceiverCaptureRequest& cfg, const Samples& samples,
-               const std::function<void()>& gap) const override {
-    (void)gap;
+  // rtl_tcp acknowledges no commands, so the plugin reports no state.
+  void Capture(const SmReceiverCaptureRequest& cfg,
+               const SmCaptureSink& sink) const override {
     ReadRtlTcp(cfg.device, cfg.center_hz, cfg.rate, cfg.gain_db.value_or(NAN),
-               cfg.correction_ppm.value_or(NAN), samples);
+               cfg.correction_ppm.value_or(NAN), sink.samples);
   }
 };
 }  // namespace
 }  // namespace skim
 
 extern "C" SKIM_PLUGIN_EXPORT const skim::SmReceiverPlugin*
-skim_receiver_v2() noexcept {
+skim_receiver_v3() noexcept {
   static const skim::SmRtlTcpReceiverPlugin plugin;
   return &plugin;
 }
 
 extern "C" SKIM_PLUGIN_EXPORT const skim::SmReceiverPluginDescriptor*
-skim_receiver_descriptor_v2() noexcept {
+skim_receiver_descriptor_v3() noexcept {
   static constexpr skim::SmReceiverPluginDescriptor descriptor{
-      "rtltcp:", "RTL-TCP", "127.0.0.1:1234", false, true, true};
+      "rtltcp:", "RTL-TCP", "127.0.0.1:1234", false, true, true, false};
   return &descriptor;
 }

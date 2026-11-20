@@ -5,7 +5,7 @@
 
 #include "receiver/plugin_api.h"
 
-extern "C" const skim::SmReceiverPlugin* skim_receiver_v2() noexcept;
+extern "C" const skim::SmReceiverPlugin* skim_receiver_v3() noexcept;
 
 namespace {
 bool initialized = false;
@@ -84,7 +84,7 @@ PaError Pa_CloseStream(PaStream*) {
 }
 
 int main() {
-  const auto* receiver = skim_receiver_v2();
+  const auto* receiver = skim_receiver_v3();
   std::vector<std::string> ids;
   receiver->Probe("", [&](const auto& id, const auto& label, uint32_t rate) {
     Check(label == "IQ stereo (Fixture API)" && rate == 48000,
@@ -99,14 +99,14 @@ int main() {
   try {
     receiver->Capture(
         {"default", 7074000, 48000, {}, {}},
-        [](const std::complex<float>* iq, size_t count) {
-          Check(gap_reported && count &&
-                    iq[0] == std::complex<float>{0.25f, -0.5f},
-                "expected overflow notification before delivering "
-                "left-I/right-Q");
-          throw SmStopFixture{};
-        },
-        [] { gap_reported = true; });
+        {[](const std::complex<float>* iq, size_t count) {
+           Check(gap_reported && count &&
+                     iq[0] == std::complex<float>{0.25f, -0.5f},
+                 "expected overflow notification before delivering "
+                 "left-I/right-Q");
+           throw SmStopFixture{};
+         },
+         [] { gap_reported = true; }, [](const skim::SmReceiverState&) {}});
     throw std::runtime_error("capture returned without delivering IQ");
   } catch (const SmStopFixture&) {
     Check(!initialized && !stream_open,
@@ -114,7 +114,7 @@ int main() {
   }
 
   try {
-    receiver->Capture({"0", 7074000, 48000, {}, {}}, {}, {});
+    receiver->Capture({"0", 7074000, 48000, {}, {}}, {});
   } catch (const std::runtime_error& error) {
     Check(std::string_view(error.what()) ==
                   "PortAudio IQ requires a stereo input device" &&

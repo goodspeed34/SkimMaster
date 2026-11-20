@@ -16,6 +16,7 @@ struct SmReceiverDriver {
   bool recording;
   bool adjustable_gain;
   bool probe_from_device;
+  bool reports_state;
   std::filesystem::path module_path;
 };
 struct SmFoundReceiver {
@@ -36,6 +37,10 @@ inline bool IsReplayReceiver(std::string_view device) {
 // directory.
 std::string ResolveReceiverDevice(std::string_view device,
                                   const std::filesystem::path& base);
+// Why a reported device state cannot feed the request's slices, phrased as
+// the condition to wait for, or empty when it matches.
+std::string StateMismatch(const SmReceiverCaptureRequest& request,
+                          const SmReceiverState& state);
 using IqReader = std::function<void(const char*, int64_t, int, const Samples&,
                                     const std::function<void()>&)>;
 void ReadReceiver(SmReceiverCaptureRequest request, const Samples& samples,

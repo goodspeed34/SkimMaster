@@ -6,6 +6,8 @@
 #include <cstdlib>
 #include <exception>
 #include <iostream>
+#include <optional>
+#include <sstream>
 #include <stdexcept>
 
 #include "core/plugin_modules.h"
@@ -25,12 +27,12 @@ std::vector<SmReceiverDriver> DiscoverReceivers() {
   for (const auto& path : PluginModules("librcvr")) {
     boost::dll::fs::error_code error;
     boost::dll::shared_library module(path, error);
-    if (error || !module.has("skim_receiver_v2") ||
-        !module.has("skim_receiver_descriptor_v2"))
+    if (error || !module.has("skim_receiver_v3") ||
+        !module.has("skim_receiver_descriptor_v3"))
       continue;
-    const auto* plugin = module.get<SmReceiverFactory>("skim_receiver_v2")();
+    const auto* plugin = module.get<SmReceiverFactory>("skim_receiver_v3")();
     const auto* descriptor = module.get<SmReceiverDescriptorFactory>(
-        "skim_receiver_descriptor_v2")();
+        "skim_receiver_descriptor_v3")();
     if (!plugin || !descriptor) continue;
     const auto id = plugin->metadata().driver_id;
     if (id.empty() || descriptor->label.empty() ||
@@ -42,11 +44,12 @@ std::vector<SmReceiverDriver> DiscoverReceivers() {
           return driver.id == id || driver.prefix == descriptor->prefix;
         });
     if (duplicate != drivers.end()) continue;
-    drivers.push_back(
-        {std::string(id), std::string(descriptor->prefix),
-         std::string(descriptor->label), std::string(descriptor->probe_hint),
-         descriptor->recording, descriptor->adjustable_gain,
-         descriptor->probe_from_device, std::filesystem::path(path.native())});
+    drivers.push_back({std::string(id), std::string(descriptor->prefix),
+                       std::string(descriptor->label),
+                       std::string(descriptor->probe_hint),
+                       descriptor->recording, descriptor->adjustable_gain,
+                       descriptor->probe_from_device, descriptor->reports_state,
+                       std::filesystem::path(path.native())});
   }
   std::stable_partition(drivers.begin(), drivers.end(), [](const auto& driver) {
     return driver.prefix.empty();
@@ -81,14 +84,35 @@ void InvokePlugin(const Operation& operation, const char* fallback,
   if (callback_error) std::rethrow_exception(callback_error);
 }
 
+std::string DescribeState(const SmReceiverState& state) {
+  std::ostringstream text;
+  text << "Device reports";
+  if (state.center_hz) text << " center " << *state.center_hz << " Hz";
+  if (state.rate) text << " rate " << *state.rate << " Hz";
+  if (state.gain_db) text << " gain " << *state.gain_db << " dB";
+  if (!state.center_hz && !state.rate && !state.gain_db) text << " no tuning";
+  return text.str();
+}
+}  // namespace
+
+std::string StateMismatch(const SmReceiverCaptureRequest& request,
+                          const SmReceiverState& state) {
+  if (state.center_hz && *state.center_hz != request.center_hz)
+    return "the center returns to " + std::to_string(request.center_hz) + " Hz";
+  if (state.rate && *state.rate != request.rate)
+    return "the rate returns to " + std::to_string(request.rate) + " Hz";
+  return {};
+}
+
+namespace {
 class SmReceiverSession {
  public:
   explicit SmReceiverSession(const SmReceiverDriver& driver)
       : module_(boost::dll::fs::path(driver.module_path.native())) {
-    if (!module_.has("skim_receiver_v2"))
+    if (!module_.has("skim_receiver_v3"))
       throw std::runtime_error(
-          "receiver module does not export skim_receiver_v2");
-    plugin_ = module_.get<SmReceiverFactory>("skim_receiver_v2")();
+          "receiver module does not export skim_receiver_v3");
+    plugin_ = module_.get<SmReceiverFactory>("skim_receiver_v3")();
     if (!plugin_ || plugin_->metadata().driver_id != driver.id)
       throw std::runtime_error("receiver plugin driver ID mismatch");
   }
@@ -110,16 +134,33 @@ class SmReceiverSession {
         throw;
       }
     };
-    InvokePlugin(
-        [&] {
-          plugin_->Capture(
-              request,
-              [&](const std::complex<float>* data, size_t count) {
-                call([&] { consume(data, count); });
-              },
-              [&] { call(gap); });
+    // IQ is dropped while the device reports tuning other than requested.
+    bool off_plan = false;
+    std::optional<SmReceiverState> last;
+    SmCaptureSink sink{
+        [&](const std::complex<float>* data, size_t count) {
+          call([&] {
+            if (!off_plan) consume(data, count);
+          });
         },
-        "receiver failed", callback_error);
+        [&] { call(gap); },
+        [&](const SmReceiverState& state) {
+          call([&] {
+            const auto mismatch = StateMismatch(request, state);
+            if (!last || last->center_hz != state.center_hz ||
+                last->rate != state.rate || last->gain_db != state.gain_db ||
+                mismatch.empty() == off_plan)
+              std::cerr << "[receiver] " << DescribeState(state)
+                        << (mismatch.empty() ? ""
+                                             : "; holding IQ until " + mismatch)
+                        << std::endl;
+            last = state;
+            if (!mismatch.empty() && !off_plan) gap();
+            off_plan = !mismatch.empty();
+          });
+        }};
+    InvokePlugin([&] { plugin_->Capture(request, sink); }, "receiver failed",
+                 callback_error);
   }
 
  private:

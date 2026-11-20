@@ -81,8 +81,10 @@ class SmPortAudioReceiverPlugin final : public SmReceiverPlugin {
     }
   }
 
-  void Capture(const SmReceiverCaptureRequest& request, const Samples& samples,
-               const std::function<void()>& gap) const override {
+  void Capture(const SmReceiverCaptureRequest& request,
+               const SmCaptureSink& sink) const override {
+    const auto& samples = sink.samples;
+    const auto& gap = sink.gap;
     if (request.gain_db || request.correction_ppm)
       throw std::runtime_error(
           "configure zero-IF hardware gain and frequency externally");
@@ -122,15 +124,16 @@ class SmPortAudioReceiverPlugin final : public SmReceiverPlugin {
 }  // namespace skim
 
 extern "C" SKIM_PLUGIN_EXPORT const skim::SmReceiverPlugin*
-skim_receiver_v2() noexcept {
+skim_receiver_v3() noexcept {
   static const skim::SmPortAudioReceiverPlugin plugin;
   return &plugin;
 }
 
 extern "C" SKIM_PLUGIN_EXPORT const skim::SmReceiverPluginDescriptor*
-skim_receiver_descriptor_v2() noexcept {
+skim_receiver_descriptor_v3() noexcept {
   static constexpr skim::SmReceiverPluginDescriptor descriptor{
       "portaudio:", "PortAudio", "Optional input name or device index",
-      false,        false,       false};
+      false,        false,       false,
+      false};
   return &descriptor;
 }

@@ -91,27 +91,27 @@ class SmWavReceiverPlugin final : public SmReceiverPlugin {
     ProbeDevices(selector, found);
   }
 
-  void Capture(const SmReceiverCaptureRequest& cfg, const Samples& samples,
-               const std::function<void()>& gap) const override {
-    (void)gap;
+  void Capture(const SmReceiverCaptureRequest& cfg,
+               const SmCaptureSink& sink) const override {
     if (cfg.gain_db || cfg.correction_ppm)
       throw std::runtime_error(
           "IQ WAV does not support gain or PPM correction");
-    ReadWavIq(cfg.device.c_str(), cfg.rate, samples);
+    ReadWavIq(cfg.device.c_str(), cfg.rate, sink.samples);
   }
 };
 }  // namespace
 }  // namespace skim
 
 extern "C" SKIM_PLUGIN_EXPORT const skim::SmReceiverPlugin*
-skim_receiver_v2() noexcept {
+skim_receiver_v3() noexcept {
   static const skim::SmWavReceiverPlugin plugin;
   return &plugin;
 }
 
 extern "C" SKIM_PLUGIN_EXPORT const skim::SmReceiverPluginDescriptor*
-skim_receiver_descriptor_v2() noexcept {
+skim_receiver_descriptor_v3() noexcept {
   static constexpr skim::SmReceiverPluginDescriptor descriptor{
-      "wav:", "IQ WAV", "File or directory on server", true, false, true};
+      "wav:", "IQ WAV", "File or directory on server", true, false,
+      true,   false};
   return &descriptor;
 }

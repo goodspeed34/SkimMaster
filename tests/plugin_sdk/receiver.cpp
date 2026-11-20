@@ -16,25 +16,25 @@ class SmExternalReceiver final : public skim::SmReceiverPlugin {
   }
 
   void Capture(const skim::SmReceiverCaptureRequest& request,
-               const skim::Samples& samples,
-               const std::function<void()>&) const override {
+               const skim::SmCaptureSink& sink) const override {
     if (request.device != "loop" || request.rate != 12000)
       throw std::runtime_error("expected resolved fixture selector and rate");
+    sink.state({request.center_hz, request.rate, {}});
     const std::complex<float> block[] = {{1.0f, 0.0f}};
-    samples(block, 1);
+    sink.samples(block, 1);
   }
 };
 }  // namespace
 
 extern "C" SKIM_PLUGIN_EXPORT const skim::SmReceiverPlugin*
-skim_receiver_v2() noexcept {
+skim_receiver_v3() noexcept {
   static const SmExternalReceiver receiver;
   return &receiver;
 }
 
 extern "C" SKIM_PLUGIN_EXPORT const skim::SmReceiverPluginDescriptor*
-skim_receiver_descriptor_v2() noexcept {
+skim_receiver_descriptor_v3() noexcept {
   static constexpr skim::SmReceiverPluginDescriptor descriptor{
-      "fixture:", "External IQ fixture", "", false, false, false};
+      "fixture:", "External IQ fixture", "", false, false, false, true};
   return &descriptor;
 }

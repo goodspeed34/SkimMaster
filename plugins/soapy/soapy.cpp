@@ -20,8 +20,9 @@ void ProbeDevices(const std::string& selector,
   }
 }
 void ReadSoapy(const char* device, int64_t dial_hz, int rate, double gain,
-               double ppm, const Samples& consume,
-               const std::function<void()>& gap) {
+               double ppm, const SmCaptureSink& sink) {
+  const auto& consume = sink.samples;
+  const auto& gap = sink.gap;
   std::array<std::complex<float>, 4096> samples;
   std::unique_ptr<SoapySDR::Device, void (*)(SoapySDR::Device*)> radio(
       SoapySDR::Device::make(std::string(device)), SoapySDR::Device::unmake);
@@ -36,6 +37,10 @@ void ReadSoapy(const char* device, int64_t dial_hz, int rate, double gain,
       throw std::runtime_error("receiver does not support PPM correction");
     radio->setFrequencyCorrection(SOAPY_SDR_RX, 0, ppm);
   }
+  sink.state(
+      {std::llround(radio->getFrequency(SOAPY_SDR_RX, 0)),
+       static_cast<int>(std::lround(radio->getSampleRate(SOAPY_SDR_RX, 0))),
+       radio->getGain(SOAPY_SDR_RX, 0)});
   auto stream = radio->setupStream(SOAPY_SDR_RX, SOAPY_SDR_CF32);
   auto close = [&](SoapySDR::Stream* s) { radio->closeStream(s); };
   std::unique_ptr<SoapySDR::Stream, decltype(close)> guard(stream, close);
@@ -80,25 +85,25 @@ class SmSoapyReceiverPlugin final : public SmReceiverPlugin {
     ProbeDevices(selector, found);
   }
 
-  void Capture(const SmReceiverCaptureRequest& cfg, const Samples& samples,
-               const std::function<void()>& gap) const override {
+  void Capture(const SmReceiverCaptureRequest& cfg,
+               const SmCaptureSink& sink) const override {
     ReadSoapy(cfg.device.c_str(), cfg.center_hz, cfg.rate,
               cfg.gain_db.value_or(NAN), cfg.correction_ppm.value_or(NAN),
-              samples, gap);
+              sink);
   }
 };
 }  // namespace
 }  // namespace skim
 
 extern "C" SKIM_PLUGIN_EXPORT const skim::SmReceiverPlugin*
-skim_receiver_v2() noexcept {
+skim_receiver_v3() noexcept {
   static const skim::SmSoapyReceiverPlugin plugin;
   return &plugin;
 }
 
 extern "C" SKIM_PLUGIN_EXPORT const skim::SmReceiverPluginDescriptor*
-skim_receiver_descriptor_v2() noexcept {
+skim_receiver_descriptor_v3() noexcept {
   static constexpr skim::SmReceiverPluginDescriptor descriptor{
-      "", "SoapySDR", "Optional driver=… filter", false, true, false};
+      "", "SoapySDR", "Optional driver=… filter", false, true, false, true};
   return &descriptor;
 }
