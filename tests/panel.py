@@ -532,8 +532,15 @@ with tempfile.TemporaryDirectory() as directory:
                       "action": "slice-save", "mode": "RTTY",
                       "slice_center": "7052000"})
         assert b"7052000 Hz center" in result
-        cw_page = get("/cw-skimmer?pause=on")
-        assert b"Manage Slices" in cw_page and b"/receiver-edit?edit=" in cw_page
+        # Allocations come from worker status, which follows the slice save
+        # once the worker restarts.
+        for _ in range(250):
+            cw_page = get("/cw-skimmer?pause=on")
+            if b"Manage Slices" in cw_page and b"/receiver-edit?edit=" in cw_page:
+                break
+            time.sleep(.04)
+        else:
+            raise AssertionError("CW allocation did not appear")
         for _ in range(150):
             rtty_page = get("/rtty-skimmer?pause=on")
             if (b"RTTY 7052000 Hz center" in get("/receiver-status") and
