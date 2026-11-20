@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <cerrno>
+#include <chrono>
 #include <cmath>
 #include <cstdio>
 #include <fstream>
@@ -14,6 +15,7 @@
 #include <sstream>
 #include <stdexcept>
 #include <system_error>
+#include <thread>
 #include <toml++/toml.hpp>
 
 #include "app/slice_tuning.h"
@@ -349,7 +351,17 @@ void SaveSettings(const fs::path& file, const std::string& source,
     fs::permissions(temp, fs::status(file).permissions());
     if (LoadSettings(file).revision != expected)
       throw std::runtime_error("configuration changed; reload and retry");
-    fs::rename(temp, file);
+    // Windows refuses to replace a file another process has open, as the
+    // supervisor does briefly while it checks for edits. Retry for a second.
+    for (int attempt = 0;; ++attempt) {
+      std::error_code error;
+      fs::rename(temp, file, error);
+      if (!error) break;
+      if (attempt == 40)
+        throw fs::filesystem_error("could not replace station TOML", temp, file,
+                                   error);
+      std::this_thread::sleep_for(std::chrono::milliseconds(25));
+    }
   } catch (...) {
     std::error_code ignored;
     fs::remove_all(staging, ignored);

@@ -56,8 +56,9 @@ with tempfile.TemporaryDirectory() as directory:
                 assert response.status == status
                 return response.read()
         except HTTPError as error:
-            assert error.code == status
-            return error.read()
+            body = error.read()
+            assert error.code == status, (path, error.code, body[:500])
+            return body
 
     def form(path):
         return {k.decode(): v.decode() for k, v in

@@ -125,8 +125,9 @@ void RenderNoiseFloor(SmWebContext& ctx, const SmReferencePage& page,
              false))
     sources.insert(row[0].get<std::string>());
   try {
-    for (const auto* source :
-         SmInstance::FromSettings(LoadSettings(ctx.config))->receivers())
+    // Keep the graph alive while iterating; receivers() refers into it.
+    const auto instance = SmInstance::FromSettings(LoadSettings(ctx.config));
+    for (const auto* source : instance->receivers())
       sources.insert(source->id());
   } catch (const std::exception&) {
     // Show recorded history even when the TOML cannot be loaded.
