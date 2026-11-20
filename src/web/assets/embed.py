@@ -38,8 +38,12 @@ help_overrides = {
         "mode page to view a larger filtered list.</p>"
     ),
     "spectrum-waterfall": (
-        "<p><b>Trace:</b> The daemon stores 256-bin FFT readings from each active IQ source, "
-        "about once per second. Select a source to view its latest trace and recent waterfall.</p>"
+        "<p><b>Trace:</b> Each active IQ source stores a 512-bin spectrum averaged over up to "
+        "sixteen FFT frames each second. Select a source to view its latest trace and recent "
+        "waterfall.</p>"
+        "<p><b>Tuning:</b> Click the trace to add a slice at that frequency. CW and RTTY center "
+        "their slice on it; FT8, FT4 and WSPR set the USB dial 1500 Hz below it. Shaded bands "
+        "mark running slices. The receiver restarts to apply the change.</p>"
         "<p><b>Units:</b> Levels are relative dBFS, not calibrated dBm. The displayed span "
         "follows the receiver center frequency and sample rate.</p>"
         "<p><b>History:</b> The chart polls the latest stored readings.</p>"

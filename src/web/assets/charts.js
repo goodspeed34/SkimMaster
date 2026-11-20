@@ -2,6 +2,7 @@ const canvas = document.querySelector("#chart");
 const statusText = document.querySelector("#chart-status");
 const context = canvas.getContext("2d");
 const { width, height } = canvas;
+let tuning = null;
 async function refresh() {
   try {
     const type = canvas.dataset.chart;
@@ -70,7 +71,17 @@ async function refresh() {
       statusText.textContent = rows.length + " heard grids";
     } else {
       const [receiver, utc, center, rate] = rows[0];
+      tuning = {receiver, center: Number(center), rate: Number(rate)};
       const newest = JSON.parse(rows[0][4]);
+      try {
+        const marks = await (await fetch("/data/slices?receiver=" + encodeURIComponent(receiver), {cache: "no-store"})).json();
+        for (const [mode, hz, span] of marks) {
+          const left = width * (Number(hz) - Number(span) / 2 - (tuning.center - tuning.rate / 2)) / tuning.rate;
+          const w = Math.max(2, width * Number(span) / tuning.rate);
+          context.fillStyle = "rgba(127,179,255,0.18)"; context.fillRect(left, 0, w, 200);
+          context.fillStyle = "#bdc1d0"; context.fillText(mode, left + 2, 12);
+        }
+      } catch {}
       context.strokeStyle="#ff8800"; context.beginPath();
       const count = newest.length;
       newest.forEach((db,i) => {let x=i*width/(count-1),y=-db*195/140;i?context.lineTo(x,y):context.moveTo(x,y);});
@@ -95,3 +106,31 @@ document.querySelector("#saveSpectrum")?.addEventListener("click", () => {
   link.href = canvas.toDataURL("image/png");
   link.click();
 });
+
+// Click-to-tune: turn a click on the spectrum into a slice frequency.
+const tuneForm = document.querySelector("#tune-form");
+if (tuneForm) {
+  const mode = document.querySelector("#tune-mode");
+  const frequency = document.querySelector("#tune-frequency");
+  const label = document.querySelector("#tune-label");
+  const hint = document.querySelector("#tune-hint");
+  let clicked = null;
+  function fill() {
+    if (clicked === null) return;
+    const digital = !["CW", "RTTY"].includes(mode.value);
+    // Timed modes center their 3 kHz passband 1500 Hz above the USB dial.
+    frequency.value = digital ? clicked - 1500 : clicked;
+    label.textContent = digital ? "USB dial (Hz)" : "Slice center (Hz)";
+    hint.textContent = "Clicked " + clicked + " Hz on " + tuneForm.elements.receiver.value + ".";
+  }
+  canvas.addEventListener("click", event => {
+    if (!tuning || canvas.dataset.chart !== "spectrum") return;
+    const box = canvas.getBoundingClientRect();
+    const fraction = (event.clientX - box.left) / box.width;
+    clicked = Math.round((tuning.center - tuning.rate / 2 + fraction * tuning.rate) / 10) * 10;
+    tuneForm.elements.receiver.value = tuning.receiver;
+    tuneForm.hidden = false;
+    fill();
+  });
+  mode.addEventListener("change", fill);
+}

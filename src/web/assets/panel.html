@@ -65,7 +65,16 @@
 <button class="btn-native" name="format" value="csv">Download CSV</button></form>
 {% endif %}
 {% if page == "spectrum-waterfall" %}<form method="get" class="action-bar"><label>IQ source <select name="receiver"><option value="">Latest active source</option>{% for row in spectrum_receivers %}<option{% if selected_receiver == row.0 %} selected{% endif %}>{{ row.0 }}</option>{% endfor %}</select></label> <button class="btn-native">Apply</button> <button type="button" class="btn-native" id="saveSpectrum">Save PNG</button></form>{% endif %}
-{% if exists("chart") %}<canvas id="chart" width="900" height="420" data-chart="{{ chart }}" style="max-width:100%"></canvas><p id="chart-status"></p><script src="/charts.js"></script>{% endif %}
+{% if page == "spectrum-waterfall" %}{% if tune_notice != "" %}<p class="notice notice-ok" role="status">{{ tune_notice }}</p>{% endif %}{% endif %}
+{% if exists("chart") %}<canvas id="chart" width="900" height="420" data-chart="{{ chart }}" style="max-width:100%"></canvas><p id="chart-status"></p>
+{% if page == "spectrum-waterfall" %}<form method="post" action="/spectrum-tune" class="action-bar" id="tune-form" hidden>
+<input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="revision" value="{{ revision }}"><input type="hidden" name="receiver" id="tune-receiver">
+<label>Mode <select name="mode" id="tune-mode"><option>CW</option><option>RTTY</option><option>FT8</option><option>FT4</option><option>WSPR</option></select></label>
+<label><span id="tune-label">Slice center (Hz)</span> <input class="mono" type="number" name="frequency" id="tune-frequency" min="1" required></label>
+<button class="btn-native">Add Slice</button> <span class="hint-inline" id="tune-hint"></span>
+</form>
+<p class="hint-inline">Click the spectrum to tune a new slice. Colored bands mark the slices already running.</p>{% endif %}
+<script src="/charts.js"></script>{% endif %}
 {% if admin %}
 {% if page == "receiver-edit" %}
 <!-- receiver editor -->

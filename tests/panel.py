@@ -515,6 +515,22 @@ with tempfile.TemporaryDirectory() as directory:
         assert b"Desk Archive" in post("/receiver-edit", edit)
         assert "mode = 'CW'" in config.read_text() or 'mode = "CW"' in config.read_text()
         assert b"Disabled" in get("/receiver-status")
+        spectrum_page = get("/spectrum-waterfall")
+        assert b'id="tune-form"' in spectrum_page
+        tune = {**form("/spectrum-waterfall"), "receiver": "Desk Archive",
+                "mode": "FT8", "frequency": "7074000"}
+        tuned = post("/spectrum-tune", tune)
+        assert b"Added a FT8 slice at 7074000 Hz" in tuned, tuned
+        assert "dial_hz = 7074000" in config.read_text()
+        assert b"select a decoder mode" in post(
+            "/spectrum-tune", {**form("/spectrum-waterfall"),
+                               "receiver": "Desk Archive", "mode": "AM",
+                               "frequency": "7074000"}, 400)
+        assert b"Could not add the slice" in post(
+            "/spectrum-tune", {**form("/spectrum-waterfall"),
+                               "receiver": "Nowhere", "mode": "CW",
+                               "frequency": "7030000"}, 400)
+        assert json.loads(get("/data/slices?receiver=Desk%20Archive")) == []
         assert b"configuration changed" in post(
             "/receiver-edit", {**add, "action": "delete", "original": "Desk Archive"}, 400)
         delete_path = "/receiver-edit?" + urlencode({"delete": "Desk Archive"})

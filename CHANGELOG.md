@@ -19,6 +19,8 @@ ABIs are versioned separately by their exported symbol names.
   seconds.
 - **Decode a Recording** on the decoder pages: decode an uploaded WAV with the
   saved settings and show the results without storing or reporting them.
+- Click-to-tune spectrum: click the trace to add a slice at that frequency;
+  running slices are shaded on the trace.
 - Noise Floor Analysis: one-minute noise-floor densities per receiver
   (`noise_floor`, schema version 4), a 24-hour chart, per-band statistics
   with trend and alert threshold, CSV export, and the latest value in the

@@ -380,6 +380,19 @@ void RegisterPageRoutes(httplib::Server& server, SmWebContext& ctx) {
         model["selected_receiver"] =
             Escape(req.get_param_value("receiver").c_str());
         model["chart"] = slug == "spectrum-waterfall" ? "spectrum" : "map";
+        model["csrf"] = ctx.token;
+        model["revision"] = "";
+        try {
+          model["revision"] = LoadSettings(ctx.config).revision;
+        } catch (const std::exception&) {
+          // Tuning is refused until the TOML loads again.
+        }
+        const auto tuned = req.get_param_value("tuned");
+        model["tune_notice"] =
+            tuned.empty() ? ""
+                          : "Added a " + Escape(tuned.c_str()) + " slice at " +
+                                Escape(req.get_param_value("hz").c_str()) +
+                                " Hz. The receiver restarts to apply it.";
         model["columns"] = Json::array();
         model["rows"] = Json::array();
         model["empty"] = false;

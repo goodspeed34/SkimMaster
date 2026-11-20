@@ -440,6 +440,23 @@ void UpdateReceiver(const fs::path& file, const std::string& expected,
   SaveTable(file, table, expected);
 }
 
+void AddSlice(const fs::path& file, const std::string& expected,
+              const std::string& receiver, const SmSliceSettings& slice) {
+  const auto current = LoadSettings(file);
+  if (current.revision != expected)
+    throw std::runtime_error("configuration changed; reload and retry");
+  auto table = toml::parse(current.source);
+  auto& entry = ReceiverTable(table, receiver);
+  const bool scheduled =
+      entry.contains("schedules") && !entry.contains("slices");
+  const auto key = scheduled ? "attached_slices" : "slices";
+  if (!scheduled && !entry.contains("center_hz"))
+    throw std::runtime_error("set the receiver RF center before adding slices");
+  if (!entry.contains(key)) entry.insert(key, toml::array{});
+  entry[key].as_array()->push_back(SliceTable(slice));
+  SaveTable(file, table, expected);
+}
+
 void UpdateSlice(const fs::path& file, const std::string& expected,
                  const std::string& receiver, const std::string& group,
                  std::optional<size_t> schedule, size_t index,

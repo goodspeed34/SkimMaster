@@ -91,6 +91,10 @@ void UpdateSlice(const std::filesystem::path& file, const std::string& expected,
                  const std::string& receiver, const std::string& group,
                  std::optional<size_t> schedule, size_t index,
                  const std::optional<SmSliceSettings>& slice);
+// Appends a slice to a receiver: to its manual slices, or to the slices
+// attached to its schedules when it is schedule-driven.
+void AddSlice(const std::filesystem::path& file, const std::string& expected,
+              const std::string& receiver, const SmSliceSettings& slice);
 void UpdateSchedule(const std::filesystem::path& file,
                     const std::string& expected, const std::string& receiver,
                     std::optional<size_t> index, bool duplicate,

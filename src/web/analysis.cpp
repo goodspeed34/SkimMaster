@@ -121,6 +121,52 @@ void RenderNoiseFloor(SmWebContext& ctx, const SmReferencePage& page,
 }
 
 void RegisterAnalysisRoutes(httplib::Server& server, SmWebContext& ctx) {
+  // Passbands of the running slices on a receiver, for spectrum markers:
+  // mode, capture center (Hz) and width (Hz).
+  server.Get("/data/slices", [&](const httplib::Request& req,
+                                 httplib::Response& res) {
+    res.set_header("Cache-Control", "no-store");
+    res.set_content(
+        Query(ctx.database,
+              "SELECT json_extract(s.value,'$.mode'),"
+              "CASE WHEN json_extract(s.value,'$.mode') IN ('CW','RTTY') THEN "
+              "coalesce(json_extract(s.value,'$.center_hz'),"
+              "json_extract(s.value,'$.dial_hz'),"
+              "json_extract(w.plan,'$.center_hz')) "
+              "ELSE json_extract(s.value,'$.dial_hz')+1500 END,"
+              "CASE json_extract(s.value,'$.mode') WHEN 'CW' THEN 48000 "
+              "WHEN 'RTTY' THEN 12000 ELSE 3000 END "
+              "FROM workers w,json_each(w.plan,'$.slices') s "
+              "WHERE w.kind='receiver' AND w.state='running' AND w.id=?1 "
+              "ORDER BY s.key",
+              {req.get_param_value("receiver")}, false)
+            .dump(),
+        "application/json");
+  });
+  server.Post("/spectrum-tune", [&](const httplib::Request& req,
+                                    httplib::Response& res) {
+    if (!ctx.ValidateForm(req, res)) return;
+    try {
+      const auto receiver = req.get_param_value("receiver");
+      const auto mode = req.get_param_value("mode");
+      if (mode != "CW" && mode != "RTTY" && mode != "FT8" && mode != "FT4" &&
+          mode != "WSPR")
+        throw std::runtime_error("select a decoder mode");
+      const auto frequency = *FormInteger(req, "frequency", 1, kMaxFrequency);
+      std::lock_guard<std::mutex> lock(ctx.config_writes);
+      AddSlice(ctx.config, req.get_param_value("revision"), receiver,
+               {mode, frequency});
+      res.set_redirect("/spectrum-waterfall?receiver=" +
+                           httplib::detail::encode_query_param(receiver) +
+                           "&tuned=" + mode +
+                           "&hz=" + std::to_string(frequency),
+                       303);
+    } catch (const std::exception& error) {
+      res.status = 400;
+      res.set_content(std::string("Could not add the slice: ") + error.what(),
+                      "text/plain; charset=utf-8");
+    }
+  });
   server.Get(
       "/data/noise", [&](const httplib::Request& req, httplib::Response& res) {
         res.set_header("Cache-Control", "no-store");

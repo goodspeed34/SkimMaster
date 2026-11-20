@@ -129,6 +129,10 @@ dial_hz = 14074000
 
 The wizard selects **Repeat WAV playback** by default. Set `repeat = true` in TOML to loop the recording at its original sample rate, with decoder state reset at each wrap. With repeat disabled, playback runs once at processing speed. To replay a one-shot recording, restart the receiver workers or change the allocation. Set `utc_ms` to the Unix UTC timestamp in milliseconds of the first IQ frame when known. With the default of zero, timed decoders treat the first frame as a slot boundary. Decoded results remain in the panel and database. All reporting feeds, including the local Telnet DX Cluster, use live receptions.
 
+## Spectrum tuning
+
+**Spectrum / Waterfall** shades the passband of each running slice. Click the trace to add a slice there: CW and RTTY center their slice on the clicked frequency, and FT8, FT4 and WSPR set the USB dial 1500 Hz below it so the signal falls mid-passband. Adjust the frequency or mode before saving. The slice is added to the receiver's manual slices, or to its schedule-attached slices if it runs on schedules, and the receiver restarts to apply it.
+
 ## Noise floor
 
 Each running receiver records its noise floor once a minute as the median power of its unoccupied FFT bins, excluding carriers and the band edges. The value is a density in dBFS/Hz, so receivers with different sample rates compare directly; add your receiver's calibration to read dBm/Hz. **Noise Floor Analysis** charts the last 24 hours per receiver with optional smoothing, lists per-band minimum, average and maximum with a six-hour trend, counts minutes above an optional alert threshold, and exports the minute values as CSV. System Summary shows each receiver's latest value.
