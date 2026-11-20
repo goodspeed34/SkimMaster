@@ -345,7 +345,11 @@ SmSettingsSnapshot SmSettingsCache::Read() {
 bool SmWebContext::ValidateForm(const httplib::Request& req,
                                 httplib::Response& res) const {
   res.set_header("Cache-Control", "no-store");
-  if (req.get_param_value("csrf") != token) {
+  // Multipart forms carry their fields as parts rather than parameters.
+  const auto csrf = req.is_multipart_form_data()
+                        ? req.get_file_value("csrf").content
+                        : req.get_param_value("csrf");
+  if (csrf != token) {
     res.status = 403;
     res.set_content("This form expired. Reload the page and try again.",
                     "text/plain");

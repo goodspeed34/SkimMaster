@@ -36,6 +36,7 @@ void Serve(const char* config, const char* address, int port,
   // Snapshot uploads stream to disk and may be large. Every other request
   // body is read into memory, so keep those small.
   constexpr size_t kMaxFormBytes = 1024 * 1024;
+  constexpr size_t kMaxRecordingBytes = 64 * 1024 * 1024;
   constexpr size_t kMaxUploadBytes = 9ULL << 30;
   server.set_payload_max_length(kMaxUploadBytes);
   server.set_pre_routing_handler(
@@ -43,7 +44,10 @@ void Serve(const char* config, const char* address, int port,
         if (req.method != "POST" || req.path == "/restore")
           return httplib::Server::HandlerResponse::Unhandled;
         const auto length = req.get_header_value_u64("Content-Length");
-        if (req.has_header("Transfer-Encoding") || length > kMaxFormBytes) {
+        // On-demand decode buffers one recording in memory.
+        const size_t limit =
+            req.path == "/decode" ? kMaxRecordingBytes : kMaxFormBytes;
+        if (req.has_header("Transfer-Encoding") || length > limit) {
           res.status = 413;
           res.set_content("Request body too large.", "text/plain");
           return httplib::Server::HandlerResponse::Handled;

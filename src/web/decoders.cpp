@@ -1,11 +1,16 @@
 // Decoder settings forms on the CW, RTTY and digital decoder pages.
 
+#include <charconv>
 #include <cmath>
 #include <cstdio>
+#include <fstream>
 #include <mutex>
+#include <optional>
 #include <stdexcept>
 #include <string>
 
+#include "app/archive.h"
+#include "decoder/recording.h"
 #include "decoder/settings.h"
 #include "web/common.h"
 
@@ -74,6 +79,78 @@ Json SettingsForm(const std::string& mode, const Json& configured) {
   }
   return form;
 }
+std::string PageFor(const std::string& mode) {
+  return mode == "CW"     ? "cw-skimmer"
+         : mode == "RTTY" ? "rtty-skimmer"
+                          : "digital-decoders";
+}
+
+std::string Optional(const std::optional<double>& value, const char* format) {
+  if (!value) return "";
+  char text[32];
+  std::snprintf(text, sizeof(text), format, *value);
+  return text;
+}
+
+void Decode(SmWebContext& ctx, const httplib::Request& req,
+            httplib::Response& res) {
+  const auto field = [&](const char* key) {
+    return req.has_file(key) ? req.get_file_value(key).content : std::string();
+  };
+  const auto mode = field("mode");
+  const auto hz = field("reference_hz");
+  const auto page = PageFor(mode);
+  Json model{{"decode_mode", Escape(mode.c_str())},
+             {"decode_hz", Escape(hz.c_str())},
+             {"decode_error", ""},
+             {"decode_rows", Json::array()},
+             {"decode_channels", Json::array()}};
+  try {
+    std::unique_lock<std::mutex> lock(ctx.decode, std::try_to_lock);
+    if (!lock)
+      throw std::runtime_error(
+          "Another recording is being decoded. Try again.");
+    int64_t reference = 0;
+    const auto parsed =
+        std::from_chars(hz.data(), hz.data() + hz.size(), reference);
+    if (hz.empty() || parsed.ec != std::errc() ||
+        parsed.ptr != hz.data() + hz.size())
+      throw std::runtime_error(
+          mode == "CW" || mode == "RTTY"
+              ? "Enter the recording's RF center in Hz."
+              : "Enter the recording's USB dial frequency in Hz.");
+    if (!req.has_file("recording") ||
+        req.get_file_value("recording").content.empty())
+      throw std::runtime_error("Choose a WAV recording to decode.");
+    const auto settings = LoadSettings(ctx.config);
+    const auto options = ResolveDecoderSettings(
+        mode, settings.topology.value("decoders", Json::object())
+                  .value(mode, Json()));
+    const auto file = TemporaryFile("recording.wav");
+    {
+      std::ofstream out(*file, std::ios::binary | std::ios::trunc);
+      const auto& content = req.get_file_value("recording").content;
+      out.write(content.data(), static_cast<std::streamsize>(content.size()));
+      if (!out) throw std::runtime_error("could not stage the recording");
+    }
+    auto result =
+        DecodeRecording(mode, file->string().c_str(), reference, options);
+    for (const auto& spot : result.spots)
+      model["decode_rows"].push_back(
+          {std::to_string(spot.frequency), Escape(spot.callsign.c_str()),
+           Escape(spot.grid.c_str()), Optional(spot.snr, "%.0f dB"),
+           Escape(spot.message.c_str())});
+    for (const auto& channel : result.channels)
+      model["decode_channels"].push_back(
+          {std::to_string(channel.frequency),
+           Optional(channel.speed, mode == "CW" ? "%.0f WPM" : "%g Bd"),
+           Optional(channel.snr, "%.1f dB"), Escape(channel.text.c_str())});
+  } catch (const std::exception& error) {
+    res.status = 400;
+    model["decode_error"] = Escape(error.what());
+  }
+  RenderDecoderPageWith(ctx, page, req, res, std::move(model));
+}
 }  // namespace
 
 void AddDecoderSettings(const std::string& slug,
@@ -87,6 +164,17 @@ void AddDecoderSettings(const std::string& slug,
 }
 
 void RegisterDecoderRoutes(httplib::Server& server, SmWebContext& ctx) {
+  server.Post("/decode",
+              [&](const httplib::Request& req, httplib::Response& res) {
+                if (!req.is_multipart_form_data()) {
+                  res.status = 400;
+                  res.set_content("Upload the recording as a form file.",
+                                  "text/plain; charset=utf-8");
+                  return;
+                }
+                if (!ctx.ValidateForm(req, res)) return;
+                Decode(ctx, req, res);
+              });
   server.Get("/data/live-text", [&](const httplib::Request& req,
                                     httplib::Response& res) {
     const auto mode = req.get_param_value("mode");

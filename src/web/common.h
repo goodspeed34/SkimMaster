@@ -112,6 +112,8 @@ struct SmWebContext {
   std::mutex config_writes;
   std::mutex probe_mutex;
   std::mutex maintenance;
+  // One on-demand decode at a time.
+  std::mutex decode;
   const std::chrono::steady_clock::time_point panel_start =
       std::chrono::steady_clock::now();
   SmSettingsCache settings_cache;
@@ -145,6 +147,11 @@ void RegisterAdminRoutes(httplib::Server& server, SmWebContext& ctx);
 void RegisterGalleryRoutes(httplib::Server& server, SmWebContext& ctx);
 void RegisterPageRoutes(httplib::Server& server, SmWebContext& ctx);
 void RegisterDecoderRoutes(httplib::Server& server, SmWebContext& ctx);
+// Renders a CW, RTTY or digital decoder page with extra model fields, such as
+// on-demand decode results. Pages showing results do not auto-refresh.
+void RenderDecoderPageWith(SmWebContext& ctx, const std::string& slug,
+                           const httplib::Request& req, httplib::Response& res,
+                           Json extra);
 // Adds the decoder settings forms for a decoder page slug to model.
 void AddDecoderSettings(const std::string& slug,
                         const SmInstanceSettings& settings, Json& model);

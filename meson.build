@@ -80,6 +80,7 @@ sources = files(
   'src/core/process_usage.cpp',
   'src/core/schema.cpp',
   'src/core/plugin_modules.cpp',
+  'src/decoder/recording.cpp',
   'src/decoder/session.cpp',
   'src/decoder/settings.cpp',
   'src/decoder/slot.cpp',

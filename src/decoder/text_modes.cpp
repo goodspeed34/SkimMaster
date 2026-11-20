@@ -413,5 +413,8 @@ void DecodeText(bool cw, const SmSettingValues& options, const IqStream& stream,
         // Decoder state restarts, so clear the channels already shown.
         if (on_channels) on_channels({}, 0);
       });
+  // Report the final text when the stream ends.
+  if (on_channels)
+    on_channels(cw ? morse->Snapshot() : rtty->Snapshot(), index);
 }
 }  // namespace skim

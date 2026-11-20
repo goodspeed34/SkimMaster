@@ -256,6 +256,73 @@ with tempfile.TemporaryDirectory() as directory:
             assert error.code == 400
         with closing(sqlite3.connect(db)) as connection, connection:
             connection.execute("DELETE FROM live_text")
+        def multipart(path, fields, files, status=200):
+            boundary = "skimmaster-test-boundary"
+            body = b""
+            for name, value in fields.items():
+                body += (f"--{boundary}\r\nContent-Disposition: form-data; "
+                         f'name="{name}"\r\n\r\n{value}\r\n').encode()
+            for name, (filename, content) in files.items():
+                body += (f"--{boundary}\r\nContent-Disposition: form-data; "
+                         f'name="{name}"; filename="{filename}"\r\n'
+                         "Content-Type: audio/wav\r\n\r\n").encode()
+                body += content + b"\r\n"
+            body += f"--{boundary}--\r\n".encode()
+            request = Request(f"http://127.0.0.1:{port}{path}", body, {
+                "Content-Type": f"multipart/form-data; boundary={boundary}"})
+            try:
+                with urlopen(request, timeout=60) as response:
+                    assert response.status == status
+                    return response.read()
+            except HTTPError as error:
+                assert error.code == status, (error.code, error.read())
+                return error.read()
+
+        with closing(sqlite3.connect(db)) as connection:
+            spots_before = connection.execute(
+                "SELECT count(*) FROM spots").fetchone()[0]
+        csrf = form("/digital-decoders")["csrf"]
+        ft8 = multipart("/decode", {"csrf": csrf, "mode": "FT8",
+                                    "reference_hz": "14074000"},
+                        {"recording": ("slot.wav", Path(sys.argv[3]).read_bytes())})
+        assert b"Recording Results" in ft8 and b"Nothing was stored" in ft8
+        assert b"CQ R7IW LN35" in ft8 and b"14075291" in ft8, ft8
+        assert b"Refresh" not in ft8
+        # RTTY: 12 kHz stereo IQ carrying "CQ K1ABC" 1030 Hz below center.
+        import array, cmath, math
+        bits = [(1, 6)]
+        for code in [14, 23, 4, 15, 27, 23, 31, 3, 25, 14, 8]:
+            bits += [(0, 1)] + [(code >> i & 1, 1) for i in range(5)] + [(1, 1.5)]
+        samples, phase = array.array("h"), 0
+        for mark, duration in bits:
+            step = math.tau * (-1030 if mark else -1200) / 12000
+            for _ in range(round(duration * 12000 / 45.45)):
+                z = cmath.exp(1j * phase)
+                samples.extend((int(z.real * 16000), int(z.imag * 16000)))
+                phase = (phase + step) % math.tau
+        rtty_wav = Path(directory) / "rtty.wav"
+        with wave.open(str(rtty_wav), "wb") as output:
+            output.setparams((2, 2, 12000, 0, "NONE", ""))
+            output.writeframes(samples.tobytes())
+        rtty = multipart("/decode", {"csrf": csrf, "mode": "RTTY",
+                                     "reference_hz": "14080000"},
+                         {"recording": ("rtty.wav", rtty_wav.read_bytes())})
+        assert b"CQ K1ABC" in rtty and re.search(rb">1407896[0-9]<", rtty), rtty
+        assert b"Channel Text at End of Recording" in rtty
+        wrong = multipart("/decode", {"csrf": csrf, "mode": "CW",
+                                      "reference_hz": "7030000"},
+                          {"recording": ("rtty.wav", rtty_wav.read_bytes())},
+                          400)
+        assert b"CW needs stereo IQ at 48000 Hz" in wrong
+        # The WAV probe below expects one stereo recording in the directory.
+        rtty_wav.unlink()
+        forged = multipart("/decode", {"csrf": "forged", "mode": "FT8",
+                                       "reference_hz": "14074000"},
+                           {"recording": ("slot.wav", b"RIFF")}, 403)
+        assert b"form expired" in forged
+        with closing(sqlite3.connect(db)) as connection:
+            assert connection.execute(
+                "SELECT count(*) FROM spots").fetchone()[0] == spots_before
         rtty_form = {**form("/rtty-skimmer"), "mode": "RTTY",
                      "shift_hz": "850", "baud": "45.45", "reverse": "on",
                      "max_channels": "16", "threshold": "24"}

@@ -279,6 +279,38 @@
 </table>
 </div>
 {% endif %}
+<form method="post" action="/decode" enctype="multipart/form-data">
+<input type="hidden" name="csrf" value="{{ csrf }}">
+<div class="table-scroll">
+<table class="cfg-table">
+  <tr><th colspan="2">Decode a Recording</th></tr>
+  <tr><td class="label-col">Mode:</td><td><select name="mode">{% for option in decode_modes %}<option{% if option == decode_mode %} selected{% endif %}>{{ option }}</option>{% endfor %}</select></td></tr>
+  <tr><td class="label-col">{% if live_text %}RF center (Hz):{% else %}USB dial (Hz):{% endif %}</td><td><input class="mono" type="number" name="reference_hz" min="1" value="{{ decode_hz }}" required></td></tr>
+  <tr><td class="label-col">WAV file:</td><td><input type="file" name="recording" accept=".wav,audio/wav" required> {% if live_text %}Stereo IQ (I left, Q right) at {% if decode_mode == "CW" %}48{% else %}12{% endif %} kHz.{% else %}One complete slot of 12 kHz mono audio.{% endif %} Up to 64 MiB.</td></tr>
+  <tr><td colspan="2"><button class="btn-native">Decode</button> Uses the saved decoder settings. Results are shown here only; they are not stored or reported.</td></tr>
+</table>
+</div>
+</form>
+{% if exists("decode_rows") %}
+{% if decode_error != "" %}<p class="notice notice-warn" role="alert">Decode failed: {{ decode_error }}</p>{% else %}
+<p class="notice notice-ok" role="status">Decoded {{ length(decode_rows) }} result(s) from the recording. Nothing was stored or reported.</p>
+<div class="table-scroll">
+<table class="cfg-table" id="decode-results">
+  <tr><th colspan="5">Recording Results</th></tr>
+  <tr><th>RF (Hz)</th><th>Callsign</th><th>Grid</th><th>SNR</th><th>Message</th></tr>
+  {% for row in decode_rows %}<tr>{% for cell in row %}<td class="mono">{{ cell }}</td>{% endfor %}</tr>{% endfor %}
+  {% if length(decode_rows) == 0 %}<tr><td colspan="5">No decodes in this recording.</td></tr>{% endif %}
+</table>
+{% if length(decode_channels) > 0 %}
+<table class="cfg-table">
+  <tr><th colspan="4">Channel Text at End of Recording</th></tr>
+  <tr><th>RF (Hz)</th><th>Speed</th><th>SNR</th><th>Text</th></tr>
+  {% for row in decode_channels %}<tr>{% for cell in row %}<td class="mono">{{ cell }}</td>{% endfor %}</tr>{% endfor %}
+</table>
+{% endif %}
+</div>
+{% endif %}
+{% endif %}
 <table class="cfg-table">
   <tr><th colspan="{{ length(columns) }}">{{ table_title }}</th></tr>
   <tr>{% for label in columns %}<th>{{ label }}</th>{% endfor %}</tr>

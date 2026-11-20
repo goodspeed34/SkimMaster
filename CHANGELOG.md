@@ -17,6 +17,8 @@ ABIs are versioned separately by their exported symbol names.
 - Live channel text on the CW and RTTY pages, published by receiver workers
   to a transient `live_text` table (schema version 3) and polled every two
   seconds.
+- **Decode a Recording** on the decoder pages: decode an uploaded WAV with the
+  saved settings and show the results without storing or reporting them.
 - Panel restore of an uploaded snapshot, a redacted diagnostics bundle and a
   confirmed factory reset. Each change is staged and applied by an in-process
   station restart that keeps a snapshot of the previous data.

@@ -117,7 +117,8 @@ void RenderDecoderPage(SmWebContext& ctx, const std::string& slug,
   model["selected_receiver"] = Escape(receiver.c_str());
   model["selected_mode"] = Escape(selected_mode.c_str());
   model["decoder_mode_filter"] = digital;
-  model["paused"] = req.get_param_value("pause") == "on";
+  model["paused"] =
+      req.get_param_value("pause") == "on" || model.contains("decode_rows");
   model["decoder_filters"] = true;
   model["empty"] = false;
   std::string mode_predicate = digital ? "(?2='' OR mode=?2) AND mode IN "
@@ -133,6 +134,11 @@ void RenderDecoderPage(SmWebContext& ctx, const std::string& slug,
                                {receiver, selected_mode}, !export_csv);
   model["recent_empty"] = model["recent_rows"].empty();
   model["live_text"] = !digital;
+  model["decode_modes"] =
+      digital ? Json{"FT8", "FT4", "WSPR"} : Json{fixed_mode};
+  if (!model.contains("decode_mode"))
+    model["decode_mode"] = digital ? "FT8" : fixed_mode;
+  if (!model.contains("decode_hz")) model["decode_hz"] = "";
   if (!digital) {
     model["live_rows"] =
         Query(ctx.database, kLiveTextSql, {selected_mode, receiver});
@@ -312,6 +318,14 @@ void RenderTablePage(SmWebContext& ctx, const std::string& slug,
   return;
 }
 }  // namespace
+
+void RenderDecoderPageWith(SmWebContext& ctx, const std::string& slug,
+                           const httplib::Request& req, httplib::Response& res,
+                           Json extra) {
+  extra["admin"] = false;
+  extra["gallery"] = false;
+  RenderDecoderPage(ctx, slug, *FindPage(slug), req, res, std::move(extra));
+}
 
 void RegisterPageRoutes(httplib::Server& server, SmWebContext& ctx) {
   server.Get(R"(/([a-z0-9-]*|index\.html))", [&](const httplib::Request& req,
