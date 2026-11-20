@@ -41,7 +41,7 @@ libcsdr is mixed-license: the core (`libcsdr.c`, `fft_fftw.c`, `fastddc.c`, `ima
 
 ## Build & test
 
-The Linux and Windows CI builds pass all 19 Meson tests. Coverage includes IQ replay, multichannel CW, off-center RTTY, FT8/FT4 and WSPR slots, all six SSTV modes, repeating WAV and reporting exclusion, reporter wire formats, decoder page filters/export, gallery mode/date filters, CSV, deletion and symlink checks, service opt-in/configuration and local worker restart, TOML identity fallback and field preservation, recovery from malformed TOML, WAV and RTL-TCP discovery, receiver edits and schedules, station lifecycle and snapshot validation. See [README.md](README.md) for build and operating commands.
+The Linux and Windows CI builds pass all 20 Meson tests. Coverage includes unit checks for schedule resolution, slice coverage, TOML validation and panel form and CSV helpers, IQ replay, multichannel CW, off-center RTTY, FT8/FT4 and WSPR slots, all six SSTV modes, repeating WAV and reporting exclusion, reporter wire formats, decoder page filters/export, gallery mode/date filters, CSV, deletion and symlink checks, service opt-in/configuration and local worker restart, TOML identity fallback and field preservation, recovery from malformed TOML, WAV and RTL-TCP discovery, receiver edits and schedules, station lifecycle and snapshot validation. See [README.md](README.md) for build and operating commands.
 
 ## Code style & tooling
 

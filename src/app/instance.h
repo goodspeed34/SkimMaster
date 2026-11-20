@@ -167,13 +167,16 @@ class SmInstance : public std::enable_shared_from_this<SmInstance> {
   std::shared_ptr<const SmSlice> find_slice(std::string_view id) const;
   std::shared_ptr<const SmDecoder> find_decoder(std::string_view id) const;
   std::shared_ptr<const SmService> find_service(std::string_view id) const;
-
- private:
-  SmInstance() = default;
+  // Resolves the allocation for a UTC minute of the day and weekday (Monday
+  // is 0). Returns one plan per active receiver and enabled service, keyed by
+  // worker ID.
   nlohmann::json WorkerPlans(const char* database, const char* gallery,
                              const std::filesystem::path& config_dir,
                              int minute, int weekday,
                              const nlohmann::json& overrides) const;
+
+ private:
+  SmInstance() = default;
   SmReceiver& AddReceiver(const nlohmann::json& settings);
   void AddSlices(SmReceiver& receiver, const nlohmann::json& slices,
                  SmSliceGroup group, std::string fallback_prefix,

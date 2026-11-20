@@ -114,6 +114,8 @@ test('basic', exe)
 instance_test = executable('instance-test', 'tests/instance.cpp',
   dependencies : station_dep)
 test('typed instance graph', instance_test)
+unit_test = executable('unit-test', 'tests/unit.cpp', dependencies : station_dep)
+test('unit', unit_test)
 
 test('replay', find_program('python3'), args : [files('tests/replay.py'), exe])
 
