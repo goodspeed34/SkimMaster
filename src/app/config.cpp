@@ -78,6 +78,23 @@ toml::table SliceTable(const SmSliceSettings& settings) {
   return slice;
 }
 
+void RejectDuplicateSlice(const toml::array& slices,
+                          const SmSliceSettings& slice,
+                          const toml::table* editing = nullptr) {
+  for (const auto& item : slices) {
+    const auto& existing = *item.as_table();
+    if (&existing == editing || existing["mode"].value_or("") != slice.mode)
+      continue;
+    const auto frequency = IsSkimmer(slice.mode)
+                               ? existing["center_hz"].value<int64_t>()
+                               : std::nullopt;
+    if ((frequency ? frequency : existing["dial_hz"].value<int64_t>()) ==
+        slice.frequency)
+      throw std::runtime_error(
+          "An identical slice already exists in this allocation.");
+  }
+}
+
 toml::table& ReceiverTable(toml::table& station, const std::string& receiver) {
   if (const auto entries = station["receivers"].as_array())
     for (auto& entry : *entries)
@@ -92,6 +109,27 @@ toml::table& IndexedTable(toml::array* entries, size_t index) {
   return *(*entries)[index].as_table();
 }
 
+std::vector<size_t> LineOffsets(const std::string& source) {
+  std::vector<size_t> lines{0};
+  for (size_t i = 0; i < source.size(); ++i)
+    if (source[i] == '\n') lines.push_back(i + 1);
+  return lines;
+}
+
+size_t SourceOffset(const std::string& source, const std::vector<size_t>& lines,
+                    toml::source_position position) {
+  auto offset = lines.at(position.line - 1);
+  if (!offset && source.compare(0, 3, "\xEF\xBB\xBF") == 0) offset = 3;
+  // TOML source columns count UTF-8 code points.
+  for (size_t column = 1; column < position.column; ++column) {
+    ++offset;
+    while (offset < source.size() &&
+           (static_cast<unsigned char>(source[offset]) & 0xc0) == 0x80)
+      ++offset;
+  }
+  return offset;
+}
+
 // Insert IDs at each slice definition so existing TOML comments and layout
 // survive.
 std::string WithDecoderIds(const std::string& source) {
@@ -99,9 +137,7 @@ std::string WithDecoderIds(const std::string& source) {
   auto* receivers = station["receivers"].as_array();
   if (!receivers) return source;
   std::map<size_t, std::string, std::greater<size_t>> insertions;
-  std::vector<size_t> lines{0};
-  for (size_t i = 0; i < source.size(); ++i)
-    if (source[i] == '\n') lines.push_back(i + 1);
+  const auto lines = LineOffsets(source);
   auto add_ids = [&](toml::table& owner, const char* group) {
     auto* slices = owner[group].as_array();
     if (!slices) return;
@@ -113,14 +149,7 @@ std::string WithDecoderIds(const std::string& source) {
       if (line_end == std::string::npos) line_end = source.size();
       const bool crlf = line_end && source[line_end - 1] == '\r';
       if (slice.is_inline()) {
-        // TOML source columns count UTF-8 code points.
-        if (!offset && source.compare(0, 3, "\xEF\xBB\xBF") == 0) offset = 3;
-        for (size_t column = 1; column < position.column; ++column) {
-          ++offset;
-          while (offset < line_end &&
-                 (static_cast<unsigned char>(source[offset]) & 0xc0) == 0x80)
-            ++offset;
-        }
+        offset = SourceOffset(source, lines, position);
         if (offset >= line_end || source[offset] != '{')
           throw std::runtime_error("cannot locate inline slice definition");
         ++offset;
@@ -171,7 +200,16 @@ std::string Revision(const std::string& source) {
 }
 
 SmInstanceSettings Parse(const fs::path& file, std::string source) {
-  auto table = toml::parse(source, file.string());
+  auto table = [&] {
+    try {
+      return toml::parse(source, file.string());
+    } catch (const toml::parse_error& error) {
+      const auto position = error.source().begin;
+      throw std::runtime_error("Line " + std::to_string(position.line) +
+                               ", column " + std::to_string(position.column) +
+                               ": " + error.what());
+    }
+  }();
   auto revision = Revision(source);
   // Ignore legacy login settings and omit them from the configuration shown
   // in the panel. Preserve the digest of the on-disk file for stale edits.
@@ -256,7 +294,9 @@ SmInstanceSettings Parse(const fs::path& file, std::string source) {
           std::move(topology),
           std::move(service_options),
           std::move(source),
-          revision};
+          revision,
+          data.value("database", "station.sqlite"),
+          data.value("gallery", "gallery")};
 }
 bool IsPrivateSetting(std::string_view key) {
   return key == "email" || key == "sign_in" || key == "user" ||
@@ -319,18 +359,25 @@ void CreateDefaultSettings(const fs::path& file) {
     throw std::runtime_error("cannot write " + file.string());
   }
 }
-SmInstanceSettings LoadSettings(const fs::path& file) {
+static std::string ReadSettingsSource(const fs::path& file) {
   if (!fs::is_regular_file(file) || fs::file_size(file) > 1024 * 1024)
     throw std::runtime_error("expected a station TOML file of at most 1 MiB");
   std::ifstream input(file, std::ios::binary);
   if (!input) throw std::runtime_error("cannot read station TOML");
-  return Parse(file, {std::istreambuf_iterator<char>(input), {}});
+  return {std::istreambuf_iterator<char>(input), {}};
+}
+
+SmInstanceSettings LoadSettings(const fs::path& file) {
+  return Parse(file, ReadSettingsSource(file));
+}
+
+std::string SettingsRevision(const fs::path& file) {
+  return Revision(ReadSettingsSource(file));
 }
 
 void SaveSettings(const fs::path& file, const std::string& source,
                   const std::string& expected) {
-  auto current = LoadSettings(file);
-  if (current.revision != expected)
+  if (SettingsRevision(file) != expected)
     throw std::runtime_error("configuration changed; reload and retry");
   auto validated = Parse(file, source);
   auto with_ids = WithDecoderIds(validated.source);
@@ -349,7 +396,7 @@ void SaveSettings(const fs::path& file, const std::string& source,
     output << validated.source;
     output.close();
     fs::permissions(temp, fs::status(file).permissions());
-    if (LoadSettings(file).revision != expected)
+    if (SettingsRevision(file) != expected)
       throw std::runtime_error("configuration changed; reload and retry");
     // Windows refuses to replace a file another process has open, as the
     // supervisor does briefly while it checks for edits. Retry for a second.
@@ -377,6 +424,85 @@ SmInstanceSettings PersistDecoderIds(const fs::path& file,
   if (with_ids == current.source) return current;
   SaveSettings(file, with_ids, current.revision);
   return LoadSettings(file);
+}
+
+void UpdateGeneralSettings(const fs::path& file, const std::string& expected,
+                           const SmGeneralSettings& settings) {
+  const auto current = LoadSettings(file);
+  if (current.revision != expected)
+    throw std::runtime_error("configuration changed; reload and retry");
+  auto identity = current.identity.value_or(SmStationIdentity{});
+  const auto& next = settings.identity;
+  auto source = current.source;
+  const auto table = toml::parse(source);
+  const auto lines = LineOffsets(source);
+  const auto root = SourceOffset(source, lines, {1, 1});
+  const auto newline = source.find("\r\n") == std::string::npos ? "\n" : "\r\n";
+  std::map<size_t, std::pair<size_t, std::string>, std::greater<size_t>> edits;
+  auto set = [&](auto field, const char* key, const auto& value,
+                 size_t insertion, const std::string& prefix,
+                 const std::string& suffix) {
+    std::ostringstream formatted;
+    formatted << toml::toml_formatter{toml::value(value)};
+    if (field) {
+      const auto region = field.node()->source();
+      const auto begin = SourceOffset(source, lines, region.begin);
+      const auto end = SourceOffset(source, lines, region.end);
+      edits[begin] = {end - begin, formatted.str()};
+    } else {
+      edits[insertion].second +=
+          prefix + key + " = " + formatted.str() + suffix;
+    }
+  };
+  if (settings.address != current.address)
+    set(table["listen_address"], "listen_address", settings.address, root, "",
+        newline);
+  if (settings.port != current.port)
+    set(table["port"], "port", settings.port, root, "", newline);
+  if (settings.database != current.database_setting)
+    set(table["database"], "database", settings.database, root, "", newline);
+  if (settings.gallery != current.gallery_setting)
+    set(table["gallery"], "gallery", settings.gallery, root, "", newline);
+  if (settings.first_run_wizard != current.first_run_wizard)
+    set(table["first_run_wizard"], "first_run_wizard",
+        settings.first_run_wizard, root, "", newline);
+  const auto station = table["station"];
+  auto station_start = source.size();
+  std::string prefix;
+  std::string suffix = newline;
+  if (station) {
+    station_start = SourceOffset(source, lines, station.node()->source().begin);
+    if (station.as_table()->is_inline()) {
+      ++station_start;
+      suffix = ", ";
+    } else if (source.at(station_start) == '[') {
+      auto end = source.find('\n', station_start);
+      if (end == std::string::npos) {
+        station_start = source.size();
+        edits[station_start].second += newline;
+      } else {
+        station_start = end + 1;
+      }
+    } else {
+      station_start = root;
+      prefix = "station.";
+    }
+  } else if (!next.callsign.empty() || !next.grid.empty() ||
+             !next.name.empty() || !next.email.empty()) {
+    edits[station_start].second += std::string(newline) + "[station]" + newline;
+  }
+  for (const auto& [key, before, after] :
+       {std::tuple{"callsign", identity.callsign, next.callsign},
+        std::tuple{"grid", identity.grid, next.grid},
+        std::tuple{"name", identity.name, next.name},
+        std::tuple{"email", identity.email, next.email}}) {
+    if (before != after)
+      set(station[key], key, after, station_start, prefix, suffix);
+  }
+  if (edits.empty()) return;
+  for (const auto& [offset, edit] : edits)
+    source.replace(offset, edit.first, edit.second);
+  SaveSettings(file, source, expected);
 }
 
 void UpdateReceiver(const fs::path& file, const std::string& expected,
@@ -453,7 +579,8 @@ void UpdateReceiver(const fs::path& file, const std::string& expected,
 }
 
 void AddSlice(const fs::path& file, const std::string& expected,
-              const std::string& receiver, const SmSliceSettings& slice) {
+              const std::string& receiver, const SmSliceSettings& slice,
+              std::optional<size_t> schedule) {
   const auto current = LoadSettings(file);
   if (current.revision != expected)
     throw std::runtime_error("configuration changed; reload and retry");
@@ -461,11 +588,15 @@ void AddSlice(const fs::path& file, const std::string& expected,
   auto& entry = ReceiverTable(table, receiver);
   const bool scheduled =
       entry.contains("schedules") && !entry.contains("slices");
-  const auto key = scheduled ? "attached_slices" : "slices";
-  if (!scheduled && !entry.contains("center_hz"))
+  const auto key = scheduled && !schedule ? "attached_slices" : "slices";
+  if (!scheduled && !schedule && !entry.contains("center_hz"))
     throw std::runtime_error("set the receiver RF center before adding slices");
-  if (!entry.contains(key)) entry.insert(key, toml::array{});
-  entry[key].as_array()->push_back(SliceTable(slice));
+  auto& owner =
+      schedule ? IndexedTable(entry["schedules"].as_array(), *schedule) : entry;
+  if (!owner.contains(key)) owner.insert(key, toml::array{});
+  auto& slices = *owner[key].as_array();
+  RejectDuplicateSlice(slices, slice);
+  slices.push_back(SliceTable(slice));
   SaveTable(file, table, expected);
 }
 
@@ -485,6 +616,7 @@ void UpdateSlice(const fs::path& file, const std::string& expected,
   auto* slices = owner[group].as_array();
   auto& existing = IndexedTable(slices, index);
   if (slice) {
+    RejectDuplicateSlice(*slices, *slice, &existing);
     existing.erase("center_hz");
     existing.erase("dial_hz");
     for (const auto& [key, value] : SliceTable(*slice))

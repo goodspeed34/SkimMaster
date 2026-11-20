@@ -39,11 +39,16 @@
         return !message;
     }
 
-    function show(step) {
+    function show(step, focus = true) {
         current = step;
-        if (step === 2) validateTuning();
+        if (step >= 2) validateTuning();
         panes.forEach((pane, index) => pane.classList.toggle("active", index === step));
-        steps.forEach((item, index) => item.classList.toggle("active", index === step));
+        steps.forEach((item, index) => {
+            item.classList.toggle("active", index === step);
+            if (index === step) item.setAttribute("aria-current", "step");
+            else item.removeAttribute("aria-current");
+        });
+        if (focus) panes[step].querySelector(".step-title").focus();
         back.disabled = step === 0;
         next.style.display = step === panes.length - 1 ? "none" : "";
         finish.style.display = step === panes.length - 1 ? "" : "none";
@@ -57,6 +62,11 @@
             document.getElementById("reviewRate").textContent = form.elements.rate.value;
             const mode = form.elements.mode.value;
             const skimmer = mode === "CW" || mode === "RTTY";
+            const shift = ["FT8", "FT4", "WSPR"].includes(mode) ? 1500 : 0;
+            document.getElementById("reviewCenter").textContent =
+                form.elements.center_hz.valueAsNumber || Number(form.elements.dial_hz.value) + shift;
+            document.getElementById("reviewTuning").textContent = document.getElementById("tuningHint").textContent;
+            form.querySelector("[data-capture-status]").textContent = "";
             document.getElementById("reviewDecoderLabel").textContent =
                 skimmer ? "Decoder and Slice Center (Hz)" : "Decoder and Dial (Hz)";
             document.getElementById("reviewDecoder").textContent = mode + " · " +
@@ -82,5 +92,5 @@
     });
     form.elements.mode.addEventListener("change", validateTuning);
     form.elements.dial_hz.addEventListener("input", validateTuning);
-    show(Number(form.dataset.initialStep));
+    show(Number(form.dataset.initialStep), Boolean(form.querySelector("[role=alert]:not([hidden])")));
 })();

@@ -1,3 +1,21 @@
+function updateSliceFields(form) {
+    const mode = form.elements.mode?.value;
+    const skimmer = ["CW", "RTTY"].includes(mode);
+    const showDial = Boolean(mode) && !skimmer;
+    for (const [selector, visible] of [["[data-slice-center]", skimmer], ["[data-dial-option]", showDial]]) {
+        const row = form.querySelector(selector);
+        if (!row) continue;
+        row.hidden = !visible;
+        row.querySelector("input").disabled = !visible;
+    }
+    if (form.elements.dial_hz && form.querySelector("[data-dial-option]"))
+        form.elements.dial_hz.required = showDial;
+}
+for (const form of document.querySelectorAll("[data-slice-tuning]")) {
+    form.elements.mode.addEventListener("change", () => updateSliceFields(form));
+    updateSliceFields(form);
+}
+
 for (const probe of document.querySelectorAll("[data-receiver-probe]")) {
     const select = probe.querySelector("[data-probe-driver]");
     const target = probe.querySelector("[data-probe-target]");
@@ -29,9 +47,7 @@ for (const probe of document.querySelectorAll("[data-receiver-probe]")) {
             toggleRow(row, driver?.hasAttribute("data-adjustable-gain") ?? true);
         toggleRow(form.querySelector("[data-wav-option]"),
                   driver?.hasAttribute("data-recording") ?? false);
-        toggleRow(form.querySelector("[data-slice-center]"), mode && ["CW", "RTTY"].includes(mode.value));
-        toggleRow(form.querySelector("[data-dial-option]"),
-                  mode && ["FT8", "FT4", "WSPR", "SSTV"].includes(mode.value));
+        updateSliceFields(form);
     }
     select.addEventListener("change", () => {
         target.value = "";
@@ -46,9 +62,14 @@ for (const probe of document.querySelectorAll("[data-receiver-probe]")) {
             test.disabled = true;
             feedback.textContent = "Waiting for IQ samples…";
             try {
+                const data = new FormData(form);
+                if (test.hasAttribute("data-infer-center") && !data.get("center_hz")) {
+                    const shift = ["FT8", "FT4", "WSPR"].includes(mode.value) ? 1500 : 0;
+                    data.set("center_hz", Number(data.get("dial_hz")) + shift);
+                }
                 const response = await fetch("/receiver-test", {
                     method: "POST",
-                    body: new URLSearchParams(new FormData(form))
+                    body: new URLSearchParams(data)
                 });
                 feedback.textContent = await response.text();
             } catch (error) {

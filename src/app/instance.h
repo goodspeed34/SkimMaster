@@ -72,6 +72,7 @@ class SmSlice {
   SmSlice(const SmSlice&) = delete;
 
   const std::string& id() const { return id_; }
+  bool has_persisted_id() const { return settings_.contains("slice_id"); }
   const SmReceiver& receiver() const { return receiver_; }
   const SmDecoder& decoder() const { return *decoder_; }
   SmMode mode() const { return decoder().mode(); }

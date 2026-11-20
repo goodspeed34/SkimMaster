@@ -206,7 +206,14 @@ center_hz = 14080000
                 if path == "/receivers":
                     assert b"west" in recovered and b"Worker launched" in recovered
             assert config.read_bytes() == malformed
-            config.write_bytes(original)
+            recovery_page = urllib.request.urlopen(url+"/settings/toml").read().decode()
+            assert "Line " in recovery_page and "Error while parsing array" in recovery_page
+            recovery_revision = re.search(r'name="revision" value="([^"]+)"', recovery_page)[1]
+            recovery = urllib.parse.urlencode({
+                "csrf": csrf, "revision": recovery_revision, "config": original.decode(),
+            }).encode()
+            urllib.request.urlopen(urllib.request.Request(url+"/settings/toml", data=recovery)).close()
+            assert config.read_bytes() == original
             data=urllib.parse.urlencode({"csrf":csrf,"revision":revision,"config":base}).encode()
             try:
                 urllib.request.urlopen(urllib.request.Request(url+"/settings",data=data)).close()

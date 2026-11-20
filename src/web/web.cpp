@@ -60,7 +60,8 @@ void Serve(const char* config, const char* address, int port,
   std::ostringstream token;
   for (auto byte : random)
     token << std::hex << std::setw(2) << std::setfill('0') << int(byte);
-  web::SmWebContext ctx(config, database_name.c_str(), gallery, token.str());
+  web::SmWebContext ctx(config, database_name.c_str(), gallery, address, port,
+                        token.str());
   web::RegisterReceiverRoutes(server, ctx);
   web::RegisterScheduleRoutes(server, ctx);
   web::RegisterServiceRoutes(server, ctx);
@@ -77,12 +78,18 @@ void Serve(const char* config, const char* address, int port,
                 "NULL GROUP BY grid ORDER BY max(utc_ms) DESC LIMIT 1000",
                 {}, false);
     } else {
-      rows = Query(
-          ctx.database,
-          "SELECT receiver,utc,center_hz,rate,bins FROM spectra WHERE "
-          "receiver=coalesce(nullif(?1,''),(SELECT receiver FROM spectra "
-          "ORDER BY utc DESC,receiver LIMIT 1)) ORDER BY utc DESC LIMIT 80",
-          {req.get_param_value("receiver")}, false);
+      res.set_header("Cache-Control", "no-store");
+      const auto query =
+          std::string("SELECT receiver,utc,center_hz,rate,bins,(") +
+          web::kCurrentSpectrumSql +
+          "),unixepoch()-utc FROM spectra s "
+          "WHERE receiver=coalesce(nullif(?1,''),"
+          "(SELECT receiver FROM spectra s ORDER BY (" +
+          web::kCurrentSpectrumSql +
+          ") DESC,utc DESC,receiver LIMIT 1)) "
+          "ORDER BY utc DESC LIMIT 80";
+      rows = Query(ctx.database, query.c_str(),
+                   {req.get_param_value("receiver")}, false);
     }
     res.set_content(rows.dump(), "application/json");
   });

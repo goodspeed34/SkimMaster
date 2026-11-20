@@ -50,14 +50,34 @@ void RenderReceiverEditor(SmWebContext& ctx, const httplib::Request& req,
   }
   if (req.method == "GET" && req.has_param("slice_index"))
     action = "slice-save";
-  const auto group = req.get_param_value("slice_group");
-  const auto slice_index = req.get_param_value("slice_index");
-  const auto schedule_index = req.get_param_value("schedule_index");
+  const auto slice_id = req.get_param_value("slice_id");
+  if (req.method == "GET" && !slice_id.empty())
+    action = req.has_param("confirm_delete") ? "slice-delete" : "slice-save";
+  if (req.method == "GET" && req.has_param("add_slice")) action = "slice-add";
+  auto group = req.get_param_value("slice_group");
+  auto slice_index = req.get_param_value("slice_index");
+  auto schedule_index = req.get_param_value("schedule_index");
+  const auto link_revision = req.get_param_value("link_revision");
+  const auto instance = SmInstance::FromSettings(settings);
+  const auto requested = instance->find_slice(slice_id);
+  if (requested && requested->receiver().id() == original &&
+      (requested->has_persisted_id() || link_revision == settings.revision ||
+       req.get_param_value("revision") == settings.revision)) {
+    group = requested->group() == SmSliceGroup::Attached ? "attached_slices"
+                                                         : "slices";
+    slice_index = std::to_string(requested->index());
+    schedule_index = requested->group() == SmSliceGroup::Scheduled
+                         ? std::to_string(requested->schedule_index())
+                         : "";
+  } else if (!slice_id.empty()) {
+    slice_index.clear();
+  }
   auto attached = Json::array();
   auto slice_fields = Json{{"mode", ""}, {"slice_center", ""}, {"dial_hz", ""}};
+  std::string slice_target, add_scope, delete_impact;
+  std::string failure = error;
   bool found = original.empty() && action != "delete";
   std::string probe_driver;
-  const auto instance = SmInstance::FromSettings(settings);
   for (const auto* source : instance->receivers()) {
     const auto& receiver = source->settings();
     const auto& name = source->id();
@@ -77,6 +97,28 @@ void RenderReceiverEditor(SmWebContext& ctx, const httplib::Request& req,
         tuned = std::stoll(row[1].get<std::string>());
     if (!tuned) tuned = source->configured_center();
     const auto schedules = receiver.value("schedules", Json::array());
+    add_scope = !receiver.contains("slices") && !schedules.empty()
+                    ? "Attached to scheduled tuning"
+                    : "Manual tuning";
+    if (action == "slice-add" && !schedule_index.empty()) {
+      try {
+        if (link_revision != settings.revision && req.method == "GET")
+          throw std::runtime_error(
+              "The schedule list changed. Open Band Schedules and select the "
+              "schedule again.");
+        const auto index = *FormInteger(req, "schedule_index", 0, kMaxIndex);
+        const auto& schedule = schedules.at(index);
+        add_scope = DisplayField(schedule, "name");
+        if (add_scope.empty())
+          add_scope = "Schedule " + std::to_string(index + 1);
+      } catch (const std::exception&) {
+        action = "save";
+        res.status = 409;
+        failure =
+            "The schedule list changed. Open Band Schedules and select the "
+            "schedule again.";
+      }
+    }
     for (const auto* slice : source->slices()) {
       const char* key = "slices";
       std::string label = "Manual", parent;
@@ -107,11 +149,23 @@ void RenderReceiverEditor(SmWebContext& ctx, const httplib::Request& req,
                           {"reference", reference},
                           {"coverage", coverage},
                           {"group", key},
+                          {"id", Escape(slice->id().c_str())},
+                          {"link_revision",
+                           slice->has_persisted_id() ? "" : settings.revision},
                           {"label", label},
                           {"index", slice->index()},
                           {"schedule", parent}});
       if (group == key && schedule_index == parent &&
           slice_index == std::to_string(slice->index())) {
+        slice_target = std::string(mode) + " · " + reference + " · " + label;
+        if (slice->group() == SmSliceGroup::Manual &&
+            receiver.at("slices").size() == 1)
+          delete_impact =
+              schedules.empty()
+                  ? "This is the last manual slice. The receiver may become "
+                    "idle."
+                  : "This is the last manual slice. The receiver can switch to "
+                    "an active schedule or become idle.";
         slice_fields["mode"] = mode;
         if (frequency)
           slice_fields[skimmer ? "slice_center" : "dial_hz"] =
@@ -130,11 +184,12 @@ void RenderReceiverEditor(SmWebContext& ctx, const httplib::Request& req,
     res.status = 404;
     action.clear();
   }
-  bool slice_missing =
-      action == "slice-save" && slice_fields.at("mode") == "" && error.empty();
+  const bool slice_missing =
+      (action == "slice-save" || action == "slice-delete") &&
+      slice_target.empty();
   if (slice_missing) {
     res.status = 404;
-    action.clear();
+    action = found ? "save" : "";
   }
   if (req.method == "POST" && action == "save") {
     for (auto key : {"receiver", "device", "rate", "center_hz", "gain_db",
@@ -143,7 +198,7 @@ void RenderReceiverEditor(SmWebContext& ctx, const httplib::Request& req,
     fields["enabled"] = req.get_param_value("enabled") == "on";
     fields["repeat"] = req.get_param_value("repeat") == "on";
   }
-  if (req.method == "POST" && action == "slice-save")
+  if (req.method == "POST" && (action == "slice-save" || action == "slice-add"))
     for (auto key : {"mode", "slice_center", "dial_hz"})
       slice_fields[key] = Escape(req.get_param_value(key).c_str());
   Json model = {
@@ -156,14 +211,22 @@ void RenderReceiverEditor(SmWebContext& ctx, const httplib::Request& req,
       {"attached", std::move(attached)},
       {"receiver_list", std::move(receivers)},
       {"receiver_action", action},
-      {"receiver_error", slice_missing             ? "Slice not found."
-                         : found || !error.empty() ? Escape(error.c_str())
-                                                   : "Receiver not found."},
+      {"receiver_error",
+       slice_missing
+           ? "This slice no longer exists. The current list is shown below."
+       : found || !failure.empty() ? Escape(failure.c_str())
+                                   : "Receiver not found."},
       {"original", Escape(original.c_str())},
       {"fields", std::move(fields)},
       {"slice_fields", std::move(slice_fields)},
       {"slice_group", Escape(group.c_str())},
       {"slice_index", Escape(slice_index.c_str())},
+      {"slice_target", slice_target},
+      {"slice_id", Escape(slice_id.c_str())},
+      {"add_scope", add_scope},
+      {"delete_impact", delete_impact},
+      {"slice_saved", req.get_param_value("slice_saved")},
+      {"receiver_url", Escape(EditReceiverUrl(original).c_str())},
       {"schedule_index", Escape(schedule_index.c_str())},
       {"receiver_modes", {"CW", "RTTY", "FT8", "FT4", "WSPR", "SSTV"}},
       {"drivers", DriverOptions()},
@@ -181,17 +244,25 @@ void RegisterReceiverRoutes(httplib::Server& server, SmWebContext& ctx) {
     try {
       std::optional<SmReceiverSettings> receiver;
       const auto action = req.get_param_value("action");
-      if (action == "slice-save" || action == "slice-delete") {
-        auto slice = action == "slice-save" ? FormSlice(req) : std::nullopt;
-        if (action == "slice-save" && !slice)
+      if (action == "slice-save" || action == "slice-delete" ||
+          action == "slice-add") {
+        auto slice = action != "slice-delete" ? FormSlice(req) : std::nullopt;
+        if (action != "slice-delete" && !slice)
           throw std::runtime_error("select a decoder mode");
-        auto index = *FormInteger(req, "slice_index", 0, kMaxIndex);
         auto schedule = FormInteger(req, "schedule_index", 0, kMaxIndex, true);
         auto original = req.get_param_value("original");
+        auto revision = req.get_param_value("revision");
         std::lock_guard<std::mutex> lock(ctx.config_writes);
-        UpdateSlice(ctx.config, req.get_param_value("revision"), original,
-                    req.get_param_value("slice_group"), schedule, index, slice);
-        res.set_redirect(EditReceiverUrl(original), 303);
+        if (action == "slice-add") {
+          AddSlice(ctx.config, revision, original, *slice, schedule);
+        } else {
+          const auto index = *FormInteger(req, "slice_index", 0, kMaxIndex);
+          UpdateSlice(ctx.config, revision, original,
+                      req.get_param_value("slice_group"), schedule, index,
+                      slice);
+        }
+        res.set_redirect(EditReceiverUrl(original) + "&slice_saved=" + action,
+                         303);
         return;
       }
       if (action == "save") {

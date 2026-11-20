@@ -27,6 +27,17 @@ struct SmInstanceSettings {
   nlohmann::json services;
   std::string source;
   std::string revision;
+  std::string database_setting;
+  std::string gallery_setting;
+};
+
+struct SmGeneralSettings {
+  SmStationIdentity identity;
+  std::string address;
+  int port;
+  bool first_run_wizard;
+  std::string database;
+  std::string gallery;
 };
 
 struct SmReportingServiceSettings {
@@ -80,6 +91,10 @@ nlohmann::json RedactedJson(nlohmann::json value);
 
 void CreateDefaultSettings(const std::filesystem::path& file);
 SmInstanceSettings LoadSettings(const std::filesystem::path& file);
+std::string SettingsRevision(const std::filesystem::path& file);
+void UpdateGeneralSettings(const std::filesystem::path& file,
+                           const std::string& expected,
+                           const SmGeneralSettings& settings);
 SmInstanceSettings PersistDecoderIds(const std::filesystem::path& file,
                                      SmInstanceSettings current);
 void SaveSettings(const std::filesystem::path& file, const std::string& source,
@@ -94,7 +109,8 @@ void UpdateSlice(const std::filesystem::path& file, const std::string& expected,
 // Appends a slice to a receiver: to its manual slices, or to the slices
 // attached to its schedules when it is schedule-driven.
 void AddSlice(const std::filesystem::path& file, const std::string& expected,
-              const std::string& receiver, const SmSliceSettings& slice);
+              const std::string& receiver, const SmSliceSettings& slice,
+              std::optional<size_t> schedule = std::nullopt);
 void UpdateSchedule(const std::filesystem::path& file,
                     const std::string& expected, const std::string& receiver,
                     std::optional<size_t> index, bool duplicate,

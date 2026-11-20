@@ -20,6 +20,8 @@
 #include <regex>
 #include <stdexcept>
 
+#include "app/slice_tuning.h"
+#include "app/station.h"
 #include "receiver/receiver.h"
 #include "web/common.h"
 #include "web/panel_assets.h"
@@ -27,6 +29,99 @@
 namespace skim {
 namespace web {
 namespace {
+void RenderSliceAllocations(SmWebContext& ctx, const SmReferencePage& page,
+                            httplib::Response& res, Json model) {
+  const auto settings = LoadSettings(ctx.config);
+  const auto instance = SmInstance::FromSettings(settings);
+  std::map<std::string, std::string> active;
+  for (const auto& row : Query(
+           ctx.database,
+           "SELECT json_extract(s.value,'$.slice_id'),w.status FROM workers w,"
+           "json_each(w.plan,'$.slices') s WHERE w.kind='receiver' AND "
+           "w.state='running'",
+           {}, false))
+    active.emplace(row[0].get<std::string>(), row[1].get<std::string>());
+  const auto now = std::time(nullptr);
+  const auto plans = instance->WorkerPlans(
+      ctx.database, ctx.gallery,
+      std::filesystem::path(ctx.config).parent_path(), (now / 60) % 1440,
+      (now / 86400 + 3) % 7, ScheduleOverrides(ctx.database));
+  auto rows = Json::array();
+  auto sources = Json::array();
+  for (const auto* receiver : instance->receivers()) {
+    const auto& name = receiver->id();
+    sources.push_back(Escape(name.c_str()));
+    const auto plan = plans.value(name, Json::object());
+    const auto schedules =
+        receiver->settings().value("schedules", Json::array());
+    const auto planned_slices = plan.value("slices", Json::array());
+    for (const auto* slice : receiver->slices()) {
+      std::string scope = "Manual";
+      auto center = receiver->configured_center();
+      bool schedule_enabled = true;
+      if (slice->group() == SmSliceGroup::Scheduled) {
+        const auto& schedule = schedules.at(slice->schedule_index());
+        scope = schedule.value("name", "");
+        if (scope.empty())
+          scope = "Schedule " + std::to_string(slice->schedule_index() + 1);
+        center = schedule.at("center_hz").get<int64_t>();
+        schedule_enabled = schedule.value("enabled", true);
+      } else if (slice->group() == SmSliceGroup::Attached) {
+        scope = "Attached";
+        center =
+            plan.contains("center_hz")
+                ? std::optional<int64_t>(plan.at("center_hz").get<int64_t>())
+                : std::nullopt;
+      }
+      const auto mode = ModeName(slice->mode());
+      const auto reference = slice->configured_reference();
+      const bool fits = center && slice->fits(*center);
+      const bool planned = std::any_of(
+          planned_slices.begin(), planned_slices.end(), [&](const Json& entry) {
+            return entry.at("slice_id") == slice->id();
+          });
+      const auto worker = active.find(slice->id());
+      const char* state;
+      if (!receiver->enabled())
+        state = "Receiver disabled";
+      else if (planned)
+        state = worker != active.end() ? "Allocated" : "Waiting for worker";
+      else if (!schedule_enabled)
+        state = "Schedule disabled";
+      else if (slice->group() == SmSliceGroup::Manual &&
+               plan.contains("override_expires"))
+        state = "Schedule override active";
+      else if (center && !fits)
+        state = "Outside bandwidth";
+      else
+        state = "Waiting for schedule";
+      const auto url = EditReceiverUrl(name) + "&slice_id=" +
+                       httplib::detail::encode_query_param(slice->id()) +
+                       "&link_revision=" + settings.revision;
+      rows.push_back(
+          {{"receiver", Escape(name.c_str())},
+           {"scope", Escape(scope.c_str())},
+           {"mode", mode},
+           {"reference", reference ? std::to_string(*reference) +
+                                         (IsSkimmer(mode) ? " center" : " dial")
+                                   : "Follows RF center"},
+           {"center",
+            center ? std::to_string(slice->capture_hz(*center)) : "—"},
+           {"coverage", !center ? "Awaiting tuning"
+                        : fits  ? "In bandwidth"
+                                : "Outside bandwidth"},
+           {"state", state},
+           {"worker",
+            worker != active.end() ? Escape(worker->second.c_str()) : "—"},
+           {"edit_url", Escape(url.c_str())}});
+    }
+  }
+  model["allocation_details"] = std::move(rows);
+  model["allocation_sources"] = std::move(sources);
+  model["empty"] = false;
+  ctx.Render(page, std::move(model), res);
+}
+
 void RenderDecoderPage(SmWebContext& ctx, const std::string& slug,
                        const SmReferencePage& page, const httplib::Request& req,
                        httplib::Response& res, Json model) {
@@ -49,18 +144,6 @@ void RenderDecoderPage(SmWebContext& ctx, const std::string& slug,
   if (slug == "digital-decoders")
     query += "AND json_extract(s.value,'$.mode') IN ('FT8','FT4','WSPR') ";
   query += "ORDER BY w.id,s.key";
-  if (slug == "slice-allocation") {
-    model["rows"] = Query(ctx.database, query.c_str());
-    model["empty"] = model["rows"].empty();
-    auto sources = Json::array();
-    const auto settings = LoadSettings(ctx.config);
-    for (const auto& receiver : settings.topology.at("receivers"))
-      sources.push_back(DisplayField(receiver, "receiver"));
-    model["allocation_sources"] = std::move(sources);
-    ctx.Render(page, model, res);
-    return;
-  }
-
   const auto settings = LoadSettings(ctx.config);
   std::map<std::string, std::string> receiver_options;
   for (const auto& receiver : settings.topology.at("receivers"))
@@ -151,18 +234,26 @@ void RenderDecoderPage(SmWebContext& ctx, const std::string& slug,
                     "text/csv; charset=utf-8");
     return;
   }
-  if (!model["paused"].get<bool>()) res.set_header("Refresh", "10");
   ctx.Render(page, model, res);
   return;
 }
 
 void RenderReceiverStatus(SmWebContext& ctx, const SmReferencePage& page,
                           const SmSettingsSnapshot& settings_view,
-                          httplib::Response& res, Json model) {
+                          const httplib::Request& req, httplib::Response& res,
+                          Json model) {
   model["table_title"] = "IQ Source Pool";
-  model["columns"] = {
-      "Receiver",  "Driver / Device", "RF Center (Hz)", "Sample Rate (Hz)",
-      "Gain (dB)", "Slices",          "Last IQ (UTC)",  "State"};
+  const auto setup = req.get_param_value("setup");
+  model["setup_receiver"] = Escape(setup.c_str());
+  model["columns"] = {"Receiver",
+                      "Driver / Device",
+                      "RF Center (Hz)",
+                      "Sample Rate (Hz)",
+                      "Gain (dB)",
+                      "Slices",
+                      "Last spectrum sample (UTC)",
+                      "State",
+                      "Actions"};
   Json workers = Json::array();
   try {
     workers =
@@ -221,7 +312,7 @@ void RenderReceiverStatus(SmWebContext& ctx, const SmReferencePage& page,
       }
       model["rows"].push_back({worker[0], driver + " · " + device, worker[2],
                                worker[3], worker[4], worker[5], worker[6],
-                               worker[7]});
+                               worker[7], ""});
     }
     model["empty"] = model["rows"].empty();
     ctx.Render(page, model, res);
@@ -246,7 +337,8 @@ void RenderReceiverStatus(SmWebContext& ctx, const SmReferencePage& page,
          worker ? (*worker)[2] : Json(center), source->rate(),
          DisplayField(receiver, "gain_db", "—"),
          worker ? (*worker)[3] : Json("—"), worker ? (*worker)[4] : Json("—"),
-         worker ? (*worker)[1] : Json(idle)});
+         worker ? (*worker)[1] : Json(idle),
+         Escape(EditReceiverUrl(source->id()).c_str())});
   }
   if (model["rows"].is_null()) model["rows"] = Json::array();
   model["empty"] = model["rows"].empty();
@@ -311,8 +403,6 @@ void RenderTablePage(SmWebContext& ctx, const std::string& slug,
                     "text/csv; charset=utf-8");
     return;
   }
-  if (slug == "live-spot-stream" && !model["paused"].get<bool>())
-    res.set_header("Refresh", "10");
   model["empty"] = model["rows"].empty();
   ctx.Render(page, model, res);
   return;
@@ -374,29 +464,7 @@ void RegisterPageRoutes(httplib::Server& server, SmWebContext& ctx) {
     } else {
       const char* sql;
       if (slug == "spectrum-waterfall" || slug == "live-dx-map") {
-        model["spectrum_receivers"] =
-            Query(ctx.database,
-                  "SELECT DISTINCT receiver FROM spectra ORDER BY receiver");
-        model["selected_receiver"] =
-            Escape(req.get_param_value("receiver").c_str());
-        model["chart"] = slug == "spectrum-waterfall" ? "spectrum" : "map";
-        model["csrf"] = ctx.token;
-        model["revision"] = "";
-        try {
-          model["revision"] = LoadSettings(ctx.config).revision;
-        } catch (const std::exception&) {
-          // Tuning is refused until the TOML loads again.
-        }
-        const auto tuned = req.get_param_value("tuned");
-        model["tune_notice"] =
-            tuned.empty() ? ""
-                          : "Added a " + Escape(tuned.c_str()) + " slice at " +
-                                Escape(req.get_param_value("hz").c_str()) +
-                                " Hz. The receiver restarts to apply it.";
-        model["columns"] = Json::array();
-        model["rows"] = Json::array();
-        model["empty"] = false;
-        ctx.Render(*page, model, res);
+        RenderChartPage(ctx, *page, req, res);
         return;
       } else if (slug == "system-summary") {
         model["callsign"] = "—";
@@ -484,8 +552,11 @@ void RegisterPageRoutes(httplib::Server& server, SmWebContext& ctx) {
                  slug == "rbn") {
         RenderServices(ctx, slug, req, res);
         return;
-      } else if (slug == "slice-allocation" || slug == "cw-skimmer" ||
-                 slug == "rtty-skimmer" || slug == "digital-decoders") {
+      } else if (slug == "slice-allocation") {
+        RenderSliceAllocations(ctx, *page, res, std::move(model));
+        return;
+      } else if (slug == "cw-skimmer" || slug == "rtty-skimmer" ||
+                 slug == "digital-decoders") {
         RenderDecoderPage(ctx, slug, *page, req, res, std::move(model));
         return;
       } else if (slug == "band-mode-activity") {
@@ -495,7 +566,8 @@ void RegisterPageRoutes(httplib::Server& server, SmWebContext& ctx) {
         RenderNoiseFloor(ctx, *page, req, res, std::move(model));
         return;
       } else if (slug == "receiver-status") {
-        RenderReceiverStatus(ctx, *page, settings_view, res, std::move(model));
+        RenderReceiverStatus(ctx, *page, settings_view, req, res,
+                             std::move(model));
         return;
       } else if (slug == "live-spot-stream" || slug == "heard-stations" ||
                  slug == "system-log") {
@@ -509,7 +581,6 @@ void RegisterPageRoutes(httplib::Server& server, SmWebContext& ctx) {
             "1000,'unixepoch'),receiver,mode,frequency_hz,message FROM "
             "spots "
             "ORDER BY utc_ms DESC,rowid DESC LIMIT 200";
-        res.set_header("Refresh", "10");
       }
       model["rows"] = Query(ctx.database, sql);
       model["empty"] = model["rows"].empty();

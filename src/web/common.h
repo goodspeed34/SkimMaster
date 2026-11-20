@@ -36,6 +36,9 @@ extern const char kLiveTextSql[];
 // SQL for the latest noise floor of receiver worker w within three minutes,
 // or an em dash.
 extern const char kNoiseFloorSql[];
+// True for a recent sample matching the receiving worker's current plan.
+// The sample must use the alias s.
+extern const char kCurrentSpectrumSql[];
 // SQL formatting a worker row's CPU and memory, or an em dash.
 extern const char kWorkerUsageSql[];
 
@@ -95,10 +98,13 @@ class SmSettingsCache {
 // Everything a route needs. It lives for the whole HTTP listener.
 struct SmWebContext {
   SmWebContext(const char* config_path, const char* database_path,
-               const char* gallery_path, std::string session_token)
+               const char* gallery_path, const char* listen_address,
+               int listen_port, std::string session_token)
       : config(config_path),
         database(database_path),
         gallery(gallery_path),
+        address(listen_address),
+        port(listen_port),
         token(std::move(session_token)),
         settings_cache(config_path) {}
 
@@ -111,6 +117,8 @@ struct SmWebContext {
   const char* config;
   const char* database;
   const char* gallery;
+  const char* address;
+  const int port;
   const std::string token;
   std::mutex config_writes;
   std::mutex probe_mutex;
@@ -125,6 +133,9 @@ struct SmWebContext {
   const std::regex image_filename{image_pattern};
 };
 
+void RenderChartPage(SmWebContext& ctx, const SmReferencePage& page,
+                     const httplib::Request& req, httplib::Response& res,
+                     const std::string& error = "");
 void RenderServices(SmWebContext& ctx, const std::string& slug,
                     const httplib::Request& req, httplib::Response& res,
                     const std::string& error = "");

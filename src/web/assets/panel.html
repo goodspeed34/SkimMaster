@@ -54,7 +54,7 @@
 </table>
 {% else %}
 {% if exists("config_error") %}{% if config_error != "" %}
-<div class="notice notice-warn" role="alert"><b>Station configuration could not be loaded.</b> {{ config_error }} {{ config_recovery_guidance }}</div>
+<div class="notice notice-warn" role="alert"><b>Station configuration could not be loaded.</b> {{ config_error }} {{ config_recovery_guidance }} <a href="/general-settings">Open General Settings</a></div>
 {% endif %}{% endif %}
 {% if page == "system-summary" %}
 <table class="cfg-table">
@@ -93,20 +93,32 @@
 <label>{% if page == "system-log" %}Component{% else %}Receiver{% endif %} <input name="receiver" size="15" value="{{ selected_receiver }}"></label>
 {% if page != "system-log" %}<label>Mode <select name="mode"><option value="">All modes</option>{% for m in filter_modes %}<option{% if selected_mode == m %} selected{% endif %}>{{ m }}</option>{% endfor %}</select></label>
 <label>Call prefix <input name="call" size="10" value="{{ call_filter }}"></label>{% endif %}
-{% if page == "live-spot-stream" %}<label><input type="checkbox" name="pause"{% if paused %} checked{% endif %}> Pause stream</label>{% endif %}
+{% if page == "live-spot-stream" %}<label><input type="checkbox" name="pause" data-pause-refresh data-receiver="{{ selected_receiver }}" data-mode="{{ selected_mode }}"{% if paused %} checked{% endif %}> Pause stream</label>{% endif %}
 <button class="btn-native">Apply Filters</button> <a href="/{{ page }}">Clear Filters</a>
-<button class="btn-native" name="format" value="csv">Download CSV</button></form>
+<button class="btn-native" name="format" value="csv">Download CSV</button></form>{% if page == "live-spot-stream" %}
+<p class="refresh-state" role="status" data-refresh-state>{% if paused %}Refresh paused{% else %}Showing the latest page results{% endif %}</p>
 {% endif %}
-{% if page == "spectrum-waterfall" %}<form method="get" class="action-bar"><label>IQ source <select name="receiver"><option value="">Latest active source</option>{% for row in spectrum_receivers %}<option{% if selected_receiver == row.0 %} selected{% endif %}>{{ row.0 }}</option>{% endfor %}</select></label> <button class="btn-native">Apply</button> <button type="button" class="btn-native" id="saveSpectrum">Save PNG</button></form>{% endif %}
-{% if page == "spectrum-waterfall" %}{% if tune_notice != "" %}<p class="notice notice-ok" role="status">{{ tune_notice }}</p>{% endif %}{% endif %}
-{% if exists("chart") %}<canvas id="chart" width="900" height="420" data-chart="{{ chart }}" style="max-width:100%"></canvas><p id="chart-status"></p>
-{% if page == "spectrum-waterfall" %}<form method="post" action="/spectrum-tune" class="action-bar" id="tune-form" hidden>
-<input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="revision" value="{{ revision }}"><input type="hidden" name="receiver" id="tune-receiver">
-<label>Mode <select name="mode" id="tune-mode"><option>CW</option><option>RTTY</option><option>FT8</option><option>FT4</option><option>WSPR</option></select></label>
-<label><span id="tune-label">Slice center (Hz)</span> <input class="mono" type="number" name="frequency" id="tune-frequency" min="1" required></label>
-<button class="btn-native">Add Slice</button> <span class="hint-inline" id="tune-hint"></span>
+{% endif %}
+{% if page == "spectrum-waterfall" %}
+<form method="get" action="/spectrum-waterfall" class="action-bar">
+  <label>IQ source <select name="receiver"><option value="">Automatic source</option>{% for row in spectrum_receivers %}<option value="{{ row.0 }}"{% if selected_receiver == row.0 %} selected{% endif %}>{{ row.0 }}{% if row.1 == "0" %} (historical){% endif %}</option>{% endfor %}</select></label>
+  <button class="btn-native">Apply</button> <button type="button" class="btn-native" id="saveSpectrum" disabled>Save PNG</button>
 </form>
-<p class="hint-inline">Click the spectrum to tune a new slice. Colored bands mark the slices already running.</p>{% endif %}
+{% if tune_notice != "" %}<p class="notice notice-ok" role="status">{{ tune_notice }}</p>{% endif %}
+{% if tune_error != "" %}<p class="notice notice-err" role="alert">{{ tune_error }}</p>{% endif %}
+{% endif %}
+{% if exists("chart") %}
+<canvas id="chart" width="900" height="420" data-source="{{ selected_receiver }}" role="img" aria-label="{% if chart == "spectrum" %}RF spectrum and waterfall{% else %}Map of stored Maidenhead grids{% endif %}" aria-describedby="chart-status" data-chart="{{ chart }}"></canvas><p id="chart-status"></p>
+{% if page == "spectrum-waterfall" %}
+<form method="post" action="/spectrum-tune" class="action-bar" id="tune-form">
+<input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="revision" value="{{ revision }}"><input type="hidden" name="receiver">
+<input type="hidden" name="sample_center"><input type="hidden" name="sample_rate">
+<label>Mode <select name="mode" id="tune-mode">{% for mode in tune_modes %}<option{% if mode == tune_mode %} selected{% endif %}>{{ mode }}</option>{% endfor %}</select></label>
+<label><span id="tune-label">Slice center (Hz)</span> <input class="mono" type="number" name="frequency" value="{{ tune_frequency }}" id="tune-frequency" min="1" required aria-describedby="tune-hint"></label>
+<button class="btn-primary" disabled>Add Slice</button> <span class="hint-inline" id="tune-hint">Waiting for a current IQ sample.</span>
+</form>
+<p class="settings-intro">Enter a frequency or click the spectrum trace. Shaded bands show running slice passbands.</p>
+{% endif %}
 <script src="/charts.js"></script>{% endif %}
 {% if admin %}
 {% if page == "receiver-edit" %}
@@ -209,8 +221,99 @@
 <form method="post" action="/restart" class="action-bar"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="btn-native">Restart all workers</button> Recycles receiver and service workers.</form>
 <form method="post" action="/restart-station" class="action-bar"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="btn-native">Restart station</button> Restarts the supervisor and panel and applies listener and data-path changes.</form>
 {% else %}
-<form method="post" action="/settings"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="revision" value="{{ revision }}">
-<label>Station TOML<br><textarea name="config" rows="22" cols="72">{{ config }}</textarea></label><br><button class="btn-native">Save settings</button></form>
+{% if settings_error != "" %}
+<p class="notice notice-err" id="settings-field-error" role="alert">{{ settings_error }}</p>
+{% endif %}
+{% if settings_load_error != "" %}
+<p class="notice notice-warn" role="alert">The station configuration could not be loaded. {{ settings_load_error }}</p>
+{% endif %}
+{% if settings_saved %}
+<p class="notice notice-ok" role="status">General settings saved. The station supervisor picks up identity changes automatically.</p>
+{% endif %}
+{% if length(restart_pending) > 0 %}
+<p class="notice notice-warn"><strong>Station restart required</strong> to apply changes to the {% for item in restart_pending %}{% if not loop.is_first %}, {% endif %}{{ item }}{% endfor %}. <a href="/restart-daemon">Open restart controls</a></p>
+{% endif %}
+{% if settings_advanced %}
+<h2>Advanced TOML</h2>
+<p class="settings-intro"><a href="/general-settings">Back to General Settings</a></p>
+{% if revision != "" %}
+{% if not settings_available %}<p class="settings-intro">Paste a corrected copy of your station TOML to replace the invalid file.</p>{% endif %}
+<form method="post" action="/settings/toml" class="settings-form">
+  <input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="revision" value="{{ revision }}">
+  <label for="station-toml">Station TOML</label>
+  <textarea id="station-toml" name="config" rows="22" spellcheck="false">{{ config }}</textarea>
+  <div class="settings-actions">
+    {% if settings_retry != "" %}<a href="/settings/toml" target="_blank" rel="noopener">Review current TOML (new tab)</a><button class="btn-primary" name="retry_revision" value="{{ settings_retry }}">Apply draft to reviewed revision</button>
+    {% else %}<button class="btn-primary">Validate and save TOML</button>{% endif %}
+  </div>
+</form>
+{% endif %}
+{% else if settings_available %}
+<form method="post" action="/general-settings" class="settings-form">
+  <input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="revision" value="{{ revision }}">
+  <fieldset>
+    <legend>Station identity</legend>
+    <p class="settings-intro">Reporting services use this identity when their own settings leave a field blank.</p>
+    <div class="settings-grid">
+      <label>Callsign
+        <input name="callsign" value="{{ callsign }}" maxlength="16" spellcheck="false" autocapitalize="characters"{% if settings_error_field == "callsign" %} aria-invalid="true" aria-describedby="settings-field-error" autofocus{% endif %}>
+      </label>
+      <label>Maidenhead grid
+        <input name="grid" value="{{ grid }}" maxlength="6" spellcheck="false" autocapitalize="characters" aria-describedby="grid-hint{% if settings_error_field == "grid" %} settings-field-error{% endif %}"{% if settings_error_field == "grid" %} aria-invalid="true" autofocus{% endif %}>
+        <small id="grid-hint">For example, FN42 or FN42AB.</small>
+      </label>
+      <label>Operator name <span class="optional">(optional)</span>
+        <input name="name" value="{{ name }}" maxlength="128"{% if settings_error_field == "name" %} aria-invalid="true" aria-describedby="settings-field-error" autofocus{% endif %}>
+      </label>
+      <label>Operator email <span class="optional">(optional)</span>
+        <input name="email" type="email" value="{{ email }}" maxlength="254"{% if settings_error_field == "email" %} aria-invalid="true" aria-describedby="settings-field-error" autofocus{% endif %}>
+      </label>
+    </div>
+  </fieldset>
+  <fieldset>
+    <legend>Web listener and storage</legend>
+    <p class="settings-intro">Restart the station to apply changes in this section. Relative paths are resolved from the station TOML directory.</p>
+    <div class="settings-grid">
+      <label>Listen address
+        <input name="listen_address" value="{{ listen_address }}" required spellcheck="false"{% if settings_error_field == "listen_address" %} aria-invalid="true" aria-describedby="settings-field-error" autofocus{% endif %}>
+      </label>
+      <label>HTTP port
+        <input name="port" inputmode="numeric" pattern="[0-9]{1,5}" value="{{ port }}" required{% if settings_error_field == "port" %} aria-invalid="true" aria-describedby="settings-field-error" autofocus{% endif %}>
+      </label>
+      <label>Database path
+        <input name="database" value="{{ database }}" required spellcheck="false"{% if settings_error_field == "database" %} aria-invalid="true" aria-describedby="settings-field-error" autofocus{% endif %}>
+      </label>
+      <label>SSTV gallery path
+        <input name="gallery" value="{{ gallery }}" required spellcheck="false"{% if settings_error_field == "gallery" %} aria-invalid="true" aria-describedby="settings-field-error" autofocus{% endif %}>
+      </label>
+    </div>
+  </fieldset>
+  <fieldset>
+    <legend>First-run setup</legend>
+    <label class="settings-toggle"><input type="checkbox" name="first_run_wizard"{% if first_run_wizard %} checked{% endif %}> Open Setup Wizard when no receivers are configured</label>
+  </fieldset>
+  <div class="settings-actions">
+    {% if settings_retry != "" %}<a href="/general-settings" target="_blank" rel="noopener">Review current settings (new tab)</a><button class="btn-primary" name="retry_revision" value="{{ settings_retry }}">Apply draft to reviewed revision</button>
+    {% else %}<button class="btn-primary">Save General Settings</button>{% endif %}
+  </div>
+</form>
+{% if length(identity_services) > 0 %}
+<section class="settings-service-summary" aria-labelledby="service-identity-heading">
+  <h2 id="service-identity-heading">Saved identity for enabled services</h2>
+  <div class="table-scroll">
+    <table class="cfg-table">
+      <thead><tr><th scope="col">Service</th><th scope="col">Field</th><th scope="col">Value</th><th scope="col">Source</th></tr></thead>
+      <tbody>{% for service in identity_services %}{% for field in service.fields %}
+        <tr><td>{{ service.label }}</td><td>{{ field.label }}</td><td>{% if field.value != "" %}{{ field.value }}{% else %}—{% endif %}</td><td>{{ field.source }}</td></tr>
+      {% endfor %}{% endfor %}</tbody>
+    </table>
+  </div>
+</section>
+{% endif %}
+<p class="settings-intro"><a href="/settings/toml">Advanced TOML editor</a></p>
+{% else %}
+<p><a class="btn-native" href="/settings/toml">Open TOML recovery</a></p>
+{% endif %}
 {% endif %}
 {% else %}{% if exists("service_cards") %}
 {% if service_notice != "" %}<p class="notice notice-ok" role="status">{{ service_notice }}</p>{% endif %}
@@ -299,10 +402,12 @@
 <table class="cfg-table">
   <tr><th colspan="5">Active Allocations</th></tr>
   <tr><th>Receiver</th><th>Mode</th><th>Slice Center (Hz)</th><th>Status</th><th>Settings</th></tr>
+  <tbody id="active-allocations" data-live-region>
   {% for row in allocation_rows %}
   <tr><td>{{ row.receiver }}</td><td>{{ row.mode }}</td><td class="mono">{{ row.frequency }}</td><td>{{ row.status }}</td><td><a class="btn-native" href="{{ row.manage_url }}">Manage Slices</a></td></tr>
   {% endfor %}
   {% if allocation_empty %}<tr><td colspan="5">No active slices for this mode.</td></tr>{% endif %}
+  </tbody>
 </table>
 </div>
 {% if settings_notice != "" %}<p class="notice notice-ok" role="status">{{ settings_notice }}</p>{% endif %}
@@ -315,7 +420,7 @@
   {% if decoder.unavailable != "" %}<tr><td colspan="3">Unavailable: {{ decoder.unavailable }}</td></tr>{% else %}
   <tr><th>Setting</th><th>Value</th><th>Description</th></tr>
   {% for field in decoder.fields %}
-  <tr><td class="label-col">{{ field.label }}</td><td>{% if field.kind == "boolean" %}<input type="checkbox" name="{{ field.key }}"{% if field.checked %} checked{% endif %}>{% else if field.kind == "choice" %}<select name="{{ field.key }}">{% for choice in field.choices %}<option value="{{ choice.value }}"{% if choice.selected %} selected{% endif %}>{{ choice.value }}</option>{% endfor %}</select>{% else %}<input class="mono" type="number" name="{{ field.key }}" value="{{ field.value }}" min="{{ field.min }}" max="{{ field.max }}" step="{% if field.kind == "integer" %}1{% else %}any{% endif %}" required>{% endif %}</td><td>{{ field.help }} Default: <span class="mono">{{ field.default }}</span>.</td></tr>
+  <tr><td class="label-col"><label for="{{ decoder.mode }}-{{ field.key }}">{{ field.label }}</label></td><td>{% if field.kind == "boolean" %}<input type="checkbox" id="{{ decoder.mode }}-{{ field.key }}" aria-describedby="{{ decoder.mode }}-{{ field.key }}-help" name="{{ field.key }}"{% if field.checked %} checked{% endif %}>{% else if field.kind == "choice" %}<select id="{{ decoder.mode }}-{{ field.key }}" aria-describedby="{{ decoder.mode }}-{{ field.key }}-help" name="{{ field.key }}">{% for choice in field.choices %}<option value="{{ choice.value }}"{% if choice.selected %} selected{% endif %}>{{ choice.value }}</option>{% endfor %}</select>{% else %}<input class="mono" type="number" id="{{ decoder.mode }}-{{ field.key }}" aria-describedby="{{ decoder.mode }}-{{ field.key }}-help" name="{{ field.key }}" value="{{ field.value }}" min="{{ field.min }}" max="{{ field.max }}" step="{% if field.kind == "integer" %}1{% else %}any{% endif %}" required>{% endif %}</td><td id="{{ decoder.mode }}-{{ field.key }}-help">{{ field.help }} Default: <span class="mono">{{ field.default }}</span>.</td></tr>
   {% endfor %}
   <tr><td colspan="3"><button class="btn-native">Save {{ decoder.mode }} Settings</button> Applies to every {{ decoder.mode }} slice without its own <span class="mono">settings</span> table and restarts the receivers that use it.</td></tr>
   {% endif %}
@@ -326,10 +431,11 @@
 <form method="get" action="/{{ page }}" class="action-bar">
   <label>Receiver <select name="receiver"><option value=""{% if selected_receiver == "" %} selected{% endif %}>All receivers</option>{% for source in allocation_sources %}<option value="{{ source }}"{% if selected_receiver == source %} selected{% endif %}>{{ source }}</option>{% endfor %}</select></label>
   {% if decoder_mode_filter %}<label>Mode <select name="mode"><option value=""{% if selected_mode == "" %} selected{% endif %}>All digital modes</option><option value="FT8"{% if selected_mode == "FT8" %} selected{% endif %}>FT8</option><option value="FT4"{% if selected_mode == "FT4" %} selected{% endif %}>FT4</option><option value="WSPR"{% if selected_mode == "WSPR" %} selected{% endif %}>WSPR</option></select></label>{% endif %}
-  <label><input type="checkbox" name="pause"{% if paused %} checked{% endif %}> Pause refresh</label>
+  <label><input type="checkbox" name="pause" data-pause-refresh data-receiver="{{ selected_receiver }}" data-mode="{{ selected_mode }}"{% if paused %} checked{% endif %}> Pause refresh</label>
   <button class="btn-native">Apply Filters</button> <a href="/{{ page }}">Clear Filters</a>
   <button class="btn-native" name="format" value="csv">Download CSV</button>
 </form>
+<p class="refresh-state" role="status" data-refresh-state>{% if paused %}Refresh paused{% else %}Showing the latest page results{% endif %}</p>
 {% if live_text %}
 <div class="table-scroll">
 <table class="cfg-table" id="live-text" data-mode="{{ selected_mode }}" data-receiver="{{ selected_receiver }}" data-paused="{% if paused %}true{% else %}false{% endif %}">
@@ -345,9 +451,9 @@
 <div class="table-scroll">
 <table class="cfg-table">
   <tr><th colspan="2">Decode a Recording</th></tr>
-  <tr><td class="label-col">Mode:</td><td><select name="mode">{% for option in decode_modes %}<option{% if option == decode_mode %} selected{% endif %}>{{ option }}</option>{% endfor %}</select></td></tr>
-  <tr><td class="label-col">{% if live_text %}RF center (Hz):{% else %}USB dial (Hz):{% endif %}</td><td><input class="mono" type="number" name="reference_hz" min="1" value="{{ decode_hz }}" required></td></tr>
-  <tr><td class="label-col">WAV file:</td><td><input type="file" name="recording" accept=".wav,audio/wav" required> {% if live_text %}Stereo IQ (I left, Q right) at {% if decode_mode == "CW" %}48{% else %}12{% endif %} kHz.{% else %}One complete slot of 12 kHz mono audio.{% endif %} Up to 64 MiB.</td></tr>
+  <tr><td class="label-col"><label for="recording-mode">Mode</label></td><td><select id="recording-mode" name="mode">{% for option in decode_modes %}<option{% if option == decode_mode %} selected{% endif %}>{{ option }}</option>{% endfor %}</select></td></tr>
+  <tr><td class="label-col"><label for="recording-frequency">{% if live_text %}RF center (Hz){% else %}USB dial (Hz){% endif %}</label></td><td><input id="recording-frequency" class="mono" type="number" name="reference_hz" min="1" value="{{ decode_hz }}" required></td></tr>
+  <tr><td class="label-col"><label for="recording-wav">WAV file</label></td><td><input id="recording-wav" type="file" name="recording" accept=".wav,audio/wav" aria-describedby="recording-format" required> <span id="recording-format">{% if live_text %}Stereo IQ (I left, Q right) at {% if decode_mode == "CW" %}48{% else %}12{% endif %} kHz.{% else %}One complete slot of 12 kHz mono audio.{% endif %} Up to 64 MiB.</span></td></tr>
   <tr><td colspan="2"><button class="btn-native">Decode</button> Uses the saved decoder settings. Results are shown here only; they are not stored or reported.</td></tr>
 </table>
 </div>
@@ -375,24 +481,45 @@
 <table class="cfg-table">
   <tr><th colspan="{{ length(columns) }}">{{ table_title }}</th></tr>
   <tr>{% for label in columns %}<th>{{ label }}</th>{% endfor %}</tr>
+  <tbody id="recent-decoder-results" data-live-region>
   {% for row in recent_rows %}<tr>{% for cell in row %}<td class="mono">{{ cell }}</td>{% endfor %}</tr>{% endfor %}
   {% if recent_empty %}<tr><td colspan="{{ length(columns) }}">No stored decoder results match these filters.</td></tr>{% endif %}
+  </tbody>
 </table>
-{% else %}{% if page == "receiver-status" %}<div class="table-scroll">{% endif %}
-<table class="cfg-table"><thead>{% if exists("table_title") %}<tr><th colspan="{{ length(columns) }}">{{ table_title }}</th></tr>{% endif %}<tr>{% for label in columns %}<th>{{ label }}</th>{% endfor %}</tr></thead>
-<tbody>{% for row in rows %}<tr>{% for cell in row %}<td class="mono">{{ cell }}</td>{% endfor %}</tr>{% endfor %}</tbody></table>
-{% if page == "receiver-status" %}</div><p><a href="/receiver-edit">Add / Edit Receiver</a></p>{% endif %}
-{% if page == "slice-allocation" %}
+{% else if page == "slice-allocation" %}
+<div class="table-scroll">
+<table class="cfg-table">
+  <thead><tr><th>Receiver</th><th>Allocation</th><th>Mode</th><th>Configured frequency (Hz)</th><th>Capture center (Hz)</th><th>Coverage</th><th>Allocation state</th><th>Worker</th><th>Actions</th></tr></thead>
+  <tbody id="slice-allocation-rows" data-live-region>
+  {% for slice in allocation_details %}
+  <tr><td>{{ slice.receiver }}</td><td>{{ slice.scope }}</td><td>{{ slice.mode }}</td><td class="mono">{{ slice.reference }}</td><td class="mono">{{ slice.center }}</td><td>{{ slice.coverage }}</td><td>{{ slice.state }}</td><td>{{ slice.worker }}</td><td><a href="{{ slice.edit_url }}" aria-label="Edit {{ slice.mode }} slice on {{ slice.receiver }} · {{ slice.scope }}">Edit</a></td></tr>
+  {% endfor %}
+  {% if length(allocation_details) == 0 %}<tr><td colspan="9">No decoder slices configured.</td></tr>{% endif %}
+  </tbody>
+</table>
+</div>
+{% if length(allocation_sources) > 0 %}
 <form method="get" action="/receiver-edit" class="action-bar">
-  {% if length(allocation_sources) > 0 %}
-  <label>Receiver <select name="edit">
-    {% for source in allocation_sources %}<option>{{ source }}</option>{% endfor %}
-  </select></label>
-  <button class="btn-native">Manage Slices</button>
-  {% endif %}
+  <label>Receiver <select name="edit">{% for source in allocation_sources %}<option>{{ source }}</option>{% endfor %}</select></label>
+  <button class="btn-primary" name="add_slice" value="1">Add Slice</button>
   <a class="btn-native" href="/band-schedules">Band Schedules</a>
 </form>
-{% endif %}
+{% else %}<p><a href="/receiver-edit?add=1">Add a receiver</a> to configure its first slice.</p>{% endif %}
+{% else %}
+{% if page == "receiver-status" and setup_receiver != "" %}<p class="notice notice-ok" role="status">Setup saved for <strong>{{ setup_receiver }}</strong>. Check the state and latest spectrum sample below to confirm IQ capture.</p>{% endif %}
+<div class="table-scroll">
+<table class="cfg-table"><thead>{% if exists("table_title") %}<tr><th colspan="{{ length(columns) }}">{{ table_title }}</th></tr>{% endif %}<tr>{% for label in columns %}<th>{{ label }}</th>{% endfor %}</tr></thead>
+<tbody{% if page == "live-spot-stream" %} id="live-spots" data-live-region{% else if page == "receiver-status" %} id="receiver-status-rows" data-live-region{% endif %}>
+{% for row in rows %}<tr>{% for cell in row %}
+{% if page == "receiver-status" and loop.is_last %}<td>{% if cell != "" %}<a href="{{ cell }}" aria-label="Edit receiver {{ row.0 }}">Edit</a>{% else %}—{% endif %}</td>
+{% else %}<td class="mono">{{ cell }}</td>{% endif %}
+{% endfor %}</tr>{% endfor %}
+{% if empty and page == "live-spot-stream" %}<tr><td colspan="{{ length(columns) }}">No receptions match these filters.</td></tr>{% endif %}
+{% if empty and page == "receiver-status" %}<tr><td colspan="{{ length(columns) }}">No IQ sources configured.</td></tr>{% endif %}
+</tbody></table>
+</div>
+{% if page == "receiver-status" %}<p><a href="/receiver-edit">Add / Edit Receiver</a></p>{% endif %}
+
 {% endif %}{% endif %}
-{% if empty %}{% if page == "receiver-status" %}<p>No IQ sources configured.</p>{% else %}<p>No receptions recorded.</p>{% endif %}{% endif %}
+{% if empty and page != "live-spot-stream" and page != "receiver-status" %}<p>No receptions recorded.</p>{% endif %}
 {% endif %}

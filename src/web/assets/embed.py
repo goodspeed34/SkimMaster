@@ -58,7 +58,7 @@ help_overrides = {
         "Recorded IQ playback results are included.</p>"
         "<p><b>Filters and export:</b> Filter by exact receiver and mode, or by callsign prefix. "
         "Download the matching rows as CSV.</p>"
-        "<p><b>Refresh:</b> The page reloads every ten seconds. Select Pause refresh to keep "
+        "<p><b>Refresh:</b> The results update every ten seconds. Select Pause stream to keep "
         "the current result set on screen.</p>"
     ),
     "receiver-status": (
@@ -185,7 +185,7 @@ help_overrides = {
         "RTTY receptions.</p>"
     ),
     "general-settings": (
-        "<p><b>Station Settings:</b> Edit and validate the complete station TOML file. "
+        "<p><b>Station Settings:</b> Edit the station identity, listener, storage paths and first-run behavior. "
         "Receiver, schedule and service changes reload while the daemon is running.</p>"
         "<p><b>Restart required:</b> Listener address, port, database path and gallery path "
         "take effect after a full server restart.</p>"
@@ -230,19 +230,27 @@ editor_content = editor.read_text(encoding="utf-8").replace(
 shell = replace_inside(
     reference_html, '<main class="center-panel">', "</main>",
     '<section class="page active" id="page-{{ page }}">\n'
-    '<div class="page-title">{{ title }}</div>\n'
+    '<h1 class="page-title">{{ title }}</h1>\n'
     + panel.read_text(encoding="utf-8").replace(
         "<!-- receiver editor -->", editor_content) + "</section>",
 )
 shell = replace_inside(shell, '<div id="helpBody">', "</div>", "{{ reference_help }}")
+shell = shell.replace('<body>', '<body class="control-panel"><a class="skip-link" href="#main-content">Skip to main content</a>')
+shell = shell.replace('<main class="center-panel">', '<main class="center-panel" id="main-content" tabindex="-1">')
+shell = shell.replace('<aside class="left-nav">', '<nav class="left-nav" aria-label="Control panel"><details open data-panel-nav><summary>Control panel menu</summary>')
+shell = shell.replace('</aside>', '</details></nav>', 1)
+shell = shell.replace('<div class="help-header">Help &amp; Parameter Notes</div>',
+                      '<details open data-panel-help><summary class="help-header">Help &amp; Parameter Notes</summary>')
+shell = shell.replace('</aside>', '</details></aside>', 1)
+
 shell = replace_inside(shell, "<title>", "</title>", "{{ title }} - Skim Master")
 shell = replace_inside(
     shell, '<div class="sub-bar">', "</div>",
     '    <span>Receivers: {% if length(receivers) == 0 %}<b>None</b>{% endif %}'
     '{% for receiver in receivers %}{% if not loop.is_first %} &nbsp;|&nbsp; {% endif %}'
-    '<b>{{ receiver.0 }}</b> (IF {{ receiver.1 }} MHz, BW {{ receiver.2 }} kHz){% endfor %}</span>\n'
-    '    <span>Bands: <b>{{ bands }}</b> | Decoders: <b>{{ slice_count }} Channels</b>'
-    ' | CPU Load: <b>{{ cpu_load }}</b></span>',
+    '<b>{{ receiver.0 }}</b> (RF {{ receiver.1 }} MHz, BW {{ receiver.2 }} kHz){% endfor %}</span>\n'
+    '    <span>Bands: <b>{{ bands }}</b> | Allocated slices: <b>{{ slice_count }}</b>'
+    ' | CPU / memory: <b>{{ cpu_load }}</b></span>',
 )
 source_link = '<a href="{{ source_url }}">Source code</a>'
 shell = shell.replace("v0.0.0</b><br>", "v{{ version }}</b> · " + source_link + "<br>")
@@ -260,6 +268,8 @@ shell = re.sub(
 )
 
 wizard_shell = reference_wizard.read_text(encoding="utf-8")
+wizard_shell = wizard_shell.replace('<meta charset="UTF-8">', '<meta charset="UTF-8">\n<meta name="viewport" content="width=device-width, initial-scale=1">')
+wizard_shell = wizard_shell.replace('<body>', '<body class="setup-wizard">')
 wizard_shell = replace_inside(
     wizard_shell, '<div class="wiz-body">', '</div>\n\n  <!-- 底部向导',
     wizard.read_text(encoding="utf-8").replace(

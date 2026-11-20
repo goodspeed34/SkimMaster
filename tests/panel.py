@@ -84,7 +84,7 @@ with tempfile.TemporaryDirectory() as directory:
         design = source("index.html")
         assert re.search(rb"<svg.*?</svg>", design, re.S)[0] in html
         assert b'class="sub-bar"' in html
-        assert b'<div class="help-header">Help &amp; Parameter Notes</div>' in html
+        assert b'<summary class="help-header">Help &amp; Parameter Notes</summary>' in html
         assert b'id="page-system-summary"' in html
         assert b"Daemon &amp; Station Information" in html
         assert b"Decoder Engines Activity (24h Window)" in html
@@ -94,7 +94,7 @@ with tempfile.TemporaryDirectory() as directory:
         assert b'<b>Receiver pool:</b>' in receiver_page
         source_offer = re.search(rb'<a href="(https?://[^"]+)">Source code</a>', receiver_page)
         assert source_offer is not None
-        assert b'<div class="page-title">Slice Allocation Table</div>' in get("/slice-allocation")
+        assert b'<h1 class="page-title">Slice Allocation Table</h1>' in get("/slice-allocation")
         noise = get("/noise-floor")
         assert b"No noise-floor history yet" in noise and b'data-chart="noise"' in noise
         minute = int(time.time()) // 60 * 60
@@ -239,6 +239,29 @@ with tempfile.TemporaryDirectory() as directory:
         junk_timestamp.unlink()
         assert b".top-banner" in get("/style.css")
         assert config.read_text() == settings
+        settings_page = "/general-settings"
+        general = get(settings_page)
+        assert b"<textarea" not in general
+        assert b'value="N0XYZ"' in general and b'name="first_run_wizard"' in general
+        identity = {**form(settings_page), "callsign": "w1xyz", "grid": "FN42ab",
+                    "name": "Panel & Operator", "email": "op@example.net",
+                    "listen_address": "127.0.0.1", "port": str(port),
+                    "database": "station.sqlite", "gallery": "next gallery"}
+        invalid = post(settings_page, {**identity, "grid": "ZZ99"}, 400)
+        assert b"four- or six-character Maidenhead grid" in invalid
+        assert b'value="ZZ99"' in invalid and b'value="Panel &amp; Operator"' in invalid
+        assert config.read_text() == settings
+        saved = post(settings_page, identity)
+        assert b"General settings saved" in saved
+        assert b'value="W1XYZ"' in saved and b'value="FN42AB"' in saved
+        assert b"Station restart required" in saved and b"gallery path" in saved
+        assert 'advanced_option = "preserve-me"' in config.read_text()
+        stale = post(settings_page, {**identity, "callsign": "K0NEW"}, 409)
+        assert b'value="K0NEW"' in stale and b'name="retry_revision"' in stale
+        assert b'W1XYZ' in get("/system-summary")
+        assert b"General settings saved" in post(
+            "/settings/toml", {**form("/settings/toml"), "config": settings})
+        assert config.read_text() == settings
         reset_service = post("/service", {
             **form("/dx-cluster"), "service": "cluster",
             "callsign": "", "grid": ""})
@@ -348,7 +371,7 @@ with tempfile.TemporaryDirectory() as directory:
                         {"recording": ("slot.wav", Path(sys.argv[3]).read_bytes())})
         assert b"Recording Results" in ft8 and b"Nothing was stored" in ft8
         assert b"CQ R7IW LN35" in ft8 and b"14075291" in ft8, ft8
-        assert b"Refresh" not in ft8
+        assert b"Refresh paused" in ft8
         # RTTY: 12 kHz stereo IQ carrying "CQ K1ABC" 1030 Hz below center.
         import array, cmath, math
         bits = [(1, 6)]
@@ -554,8 +577,21 @@ with tempfile.TemporaryDirectory() as directory:
             time.sleep(.04)
         else:
             raise AssertionError("RTTY allocation did not appear on its decoder page")
+        slice_id = re.search(rb'name="slice_id" value="([^"]+)" aria-label="Edit RTTY slice',
+                             get(edit_path))[1].decode()
+        stable_path = "/receiver-edit?" + urlencode(
+            {"edit": receiver["receiver"], "slice_id": slice_id})
+        confirm = stable_path + "&confirm_delete=1"
+        assert b"Confirm Delete Slice" in get(confirm)
+        assert "RTTY · 7052000 Hz center" in get(confirm).decode()
         assert b"7052000 Hz center" not in post(
-            "/receiver-edit", {**form(slice_path), **slice_form, "action": "slice-delete"})
+            "/receiver-edit", {**form(confirm), **slice_form, "slice_id": slice_id,
+                               "action": "slice-delete"})
+        try:
+            get(stable_path)
+            raise AssertionError("the deleted slice link opened an editor")
+        except HTTPError as error:
+            assert error.code == 404 and b"This slice no longer exists" in error.read()
 
         schedules = "/band-schedules"
         schedule_path = schedules + "?" + urlencode({"receiver": receiver["receiver"]})
@@ -604,9 +640,16 @@ with tempfile.TemporaryDirectory() as directory:
         assert b'id="tune-form"' in spectrum_page
         tune = {**form("/spectrum-waterfall"), "receiver": "Desk Archive",
                 "mode": "FT8", "frequency": "7074000"}
-        tuned = post("/spectrum-tune", tune)
-        assert b"Added a FT8 slice at 7074000 Hz" in tuned, tuned
+        not_live = post("/spectrum-tune", tune, 400)
+        assert b"current IQ spectrum from the selected receiver" in not_live
+        assert b'value="7074000"' in not_live
+        add_slice_path = "/receiver-edit?" + urlencode({"edit": "Desk Archive", "add_slice": "1"})
+        add_slice = {**form(add_slice_path), "original": "Desk Archive",
+                     "action": "slice-add", "mode": "FT8", "dial_hz": "7074000"}
+        assert b"Slice added" in post("/receiver-edit", add_slice)
         assert "dial_hz = 7074000" in config.read_text()
+        duplicate = post("/receiver-edit", {**add_slice, **form(add_slice_path)}, 400)
+        assert b"An identical slice already exists" in duplicate
         assert b"select a decoder mode" in post(
             "/spectrum-tune", {**form("/spectrum-waterfall"),
                                "receiver": "Desk Archive", "mode": "AM",

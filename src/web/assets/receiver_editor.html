@@ -1,3 +1,6 @@
+{% if slice_saved == "slice-add" %}<p class="notice notice-ok" role="status">Slice added. The receiver applies the updated allocation automatically.</p>
+{% else if slice_saved == "slice-save" %}<p class="notice notice-ok" role="status">Slice settings saved.</p>
+{% else if slice_saved == "slice-delete" %}<p class="notice notice-ok" role="status">Slice deleted. Check Receiver Status for the current tuning.</p>{% endif %}
 {% if receiver_error != "" %}<p class="notice notice-warn" role="alert">{{ receiver_error }}</p>{% endif %}
 <div class="table-scroll">
 <table class="cfg-table">
@@ -8,8 +11,8 @@
     <td><b>{{ row.name }}</b></td><td>{{ row.driver }} <span class="mono">{{ row.device }}</span></td>
     <td class="mono">{{ row.rate }}</td><td>{{ row.enabled }}</td>
     <td><form method="get" action="/receiver-edit">
-      <button class="btn-native" name="edit" value="{{ row.name }}">Edit</button>
-      <button class="btn-native" name="delete" value="{{ row.name }}">Delete</button>
+      <button class="btn-native" name="edit" value="{{ row.name }}" aria-label="Edit receiver {{ row.name }}">Edit</button>
+      <button class="btn-native" name="delete" value="{{ row.name }}" aria-label="Delete receiver {{ row.name }}">Delete</button>
     </form></td>
   </tr>
   {% endfor %}
@@ -29,42 +32,65 @@
   <a class="btn-native" href="/receiver-edit">Cancel</a>
 </form>
 {% else if receiver_action != "" %}
-{% if length(attached) > 0 %}
-<table class="cfg-table"><tr><th colspan="5">Attached Decoder Slices</th></tr>
+{% if original != "" %}
+<div class="table-scroll">
+<table class="cfg-table"><tr><th colspan="5">Configured Decoder Slices</th></tr>
 <tr><th>Allocation</th><th>Decoder</th><th>Frequency</th><th>IQ Coverage</th><th>Actions</th></tr>
 {% for slice in attached %}
 <tr><td>{{ slice.label }}</td><td>{{ slice.mode }}</td><td class="mono">{{ slice.reference }}</td><td>{{ slice.coverage }}</td>
   <td><form method="get" action="/receiver-edit">
     <input type="hidden" name="edit" value="{{ original }}">
-    <input type="hidden" name="slice_group" value="{{ slice.group }}">
-    <input type="hidden" name="schedule_index" value="{{ slice.schedule }}">
-    <button class="btn-native" name="slice_index" value="{{ slice.index }}">Edit</button>
+    <input type="hidden" name="link_revision" value="{{ slice.link_revision }}">
+    <button class="btn-native" name="slice_id" value="{{ slice.id }}" aria-label="Edit {{ slice.mode }} slice at {{ slice.reference }} in {{ slice.label }}">Edit</button>
   </form></td>
 </tr>
 {% endfor %}
+{% if length(attached) == 0 %}<tr><td colspan="5">No decoder slices configured for this receiver.</td></tr>{% endif %}
 </table>
+</div>
+{% if receiver_action == "save" %}
+<form method="get" action="/receiver-edit" class="action-bar">
+  <input type="hidden" name="edit" value="{{ original }}">
+  <button class="btn-primary" name="add_slice" value="1">Add Slice</button>
+</form>
 {% endif %}
-{% if receiver_action == "slice-save" %}
-<form method="post" action="/receiver-edit">
+{% endif %}
+{% if receiver_action == "slice-save" or receiver_action == "slice-add" or receiver_action == "slice-delete" %}
+{% if receiver_action == "slice-delete" %}<p class="notice notice-warn">Delete <strong>{{ slice_target }}</strong> from {{ original }}? {{ delete_impact }}</p>{% endif %}
+<form method="post" action="/receiver-edit"{% if receiver_action != "slice-delete" %} data-slice-tuning{% endif %}>
   <input type="hidden" name="csrf" value="{{ csrf }}">
   <input type="hidden" name="revision" value="{{ revision }}">
   <input type="hidden" name="original" value="{{ original }}">
+  <input type="hidden" name="slice_id" value="{{ slice_id }}">
   <input type="hidden" name="slice_group" value="{{ slice_group }}">
   <input type="hidden" name="slice_index" value="{{ slice_index }}">
   <input type="hidden" name="schedule_index" value="{{ schedule_index }}">
+  {% if receiver_action != "slice-delete" %}
   <table class="cfg-table">
-    <tr><th colspan="2">Edit Decoder Slice</th></tr>
+    <tr><th colspan="2">{% if receiver_action == "slice-add" %}Add Slice · {{ add_scope }}{% else %}Edit Decoder Slice · {{ slice_target }}{% endif %}</th></tr>
     <tr><td class="label-col"><label for="slice-mode">Mode</label></td><td><select id="slice-mode" name="mode" required>
+      {% if slice_fields.mode == "" %}<option value="">Choose decoder</option>{% endif %}
       {% for mode in receiver_modes %}<option{% if slice_fields.mode == mode %} selected{% endif %}>{{ mode }}</option>{% endfor %}
     </select></td></tr>
-    <tr><td class="label-col"><label for="slice-dial">Dial Frequency (Hz)</label></td><td><input id="slice-dial" name="dial_hz" type="number" min="1" max="1000000000000" value="{{ slice_fields.dial_hz }}"> FT8, FT4, WSPR and SSTV</td></tr>
-    <tr><td class="label-col"><label for="slice-center">Slice Center (Hz)</label></td><td><input id="slice-center" name="slice_center" type="number" min="1" max="1000000000000" value="{{ slice_fields.slice_center }}"> CW and RTTY. Blank follows receiver tuning.</td></tr>
+    <tr data-dial-option><td class="label-col"><label for="slice-dial">Dial Frequency (Hz)</label></td><td><input id="slice-dial" name="dial_hz" type="number" min="1" max="1000000000000" value="{{ slice_fields.dial_hz }}"> FT8, FT4, WSPR and SSTV</td></tr>
+    <tr data-slice-center><td class="label-col"><label for="slice-center">Slice Center (Hz)</label></td><td><input id="slice-center" name="slice_center" type="number" min="1" max="1000000000000" value="{{ slice_fields.slice_center }}"> CW and RTTY. Blank follows receiver tuning.</td></tr>
   </table>
+  <p class="settings-intro">Changing the active allocation can restart the receiver.</p>
+  {% endif %}
   <div class="action-bar">
-    <button class="btn-native" name="action" value="slice-save">Save Slice</button>
-    <button class="btn-native" name="action" value="slice-delete" formnovalidate>Delete Slice</button>
+    {% if receiver_action == "slice-delete" %}<button class="btn-native" name="action" value="slice-delete">Confirm Delete Slice</button>
+    {% else %}<button class="btn-primary" name="action" value="{{ receiver_action }}">{% if receiver_action == "slice-add" %}Add Slice{% else %}Save Slice{% endif %}</button>{% endif %}
+    <a href="{{ receiver_url }}">Cancel</a>
   </div>
 </form>
+{% if receiver_action == "slice-save" and slice_id != "" %}
+<form method="get" action="/receiver-edit" class="action-bar">
+  <input type="hidden" name="edit" value="{{ original }}">
+  <input type="hidden" name="slice_id" value="{{ slice_id }}">
+  <input type="hidden" name="link_revision" value="{{ revision }}">
+  <button class="btn-native" name="confirm_delete" value="1">Delete Slice…</button>
+</form>
+{% endif %}
 {% else if receiver_action == "save" %}
 <form method="post" action="/receiver-edit">
   <input type="hidden" name="csrf" value="{{ csrf }}">
@@ -82,12 +108,12 @@
     <tr data-live-option><td class="label-col"><label for="gain_db">Gain (dB)</label></td><td><input id="gain_db" name="gain_db" type="number" min="-200" max="200" step="any" value="{{ fields.gain_db }}"> <span class="hint-inline">Optional</span></td></tr>
     <tr data-live-option><td class="label-col"><label for="ppm">Frequency Correction (PPM)</label></td><td><input id="ppm" name="ppm" type="number" min="-1000" max="1000" step="any" value="{{ fields.ppm }}"> <span class="hint-inline">Optional</span></td></tr>
     <tr data-wav-option><td class="label-col">WAV Playback</td><td><label><input name="repeat" type="checkbox"{% if fields.repeat %} checked{% endif %}> Repeat WAV playback</label><br><label>Start time (Unix UTC milliseconds, optional) <input name="utc_ms" type="number" min="0" max="100000000000000" value="{{ fields.utc_ms }}"></label></td></tr>
-    <tr><td class="label-col"><label for="mode">Attach Decoder Slice</label></td><td><select id="mode" name="mode">
+    {% if original == "" %}<tr><td class="label-col"><label for="mode">Attach Decoder Slice</label></td><td><select id="mode" name="mode">
       <option value="">None</option>
       {% for mode in receiver_modes %}<option{% if fields.mode == mode %} selected{% endif %}>{{ mode }}</option>{% endfor %}
     </select> <span class="hint-inline">Save to attach this slice. It activates when its full bandwidth fits the IQ source.</span></td></tr>
     <tr data-dial-option><td class="label-col"><label for="dial_hz">Dial Frequency (Hz)</label></td><td><input id="dial_hz" name="dial_hz" type="number" min="1" max="1000000000000" value="{{ fields.dial_hz }}"></td></tr>
-    <tr data-slice-center><td class="label-col"><label for="slice_center">Slice Center (Hz)</label></td><td><input id="slice_center" name="slice_center" type="number" min="1" max="1000000000000" value="{{ fields.slice_center }}"> <span class="hint-inline">Blank follows receiver tuning.</span></td></tr>
+    <tr data-slice-center><td class="label-col"><label for="slice_center">Slice Center (Hz)</label></td><td><input id="slice_center" name="slice_center" type="number" min="1" max="1000000000000" value="{{ fields.slice_center }}"> <span class="hint-inline">Blank follows receiver tuning.</span></td></tr>{% endif %}
   </table>
   <div class="action-bar"><button class="btn-native">Save Receiver</button>
     <button class="btn-native" type="button" data-capture-test>Test Configuration</button>
@@ -96,6 +122,6 @@
     <span role="status" data-capture-status></span>
   </div>
 </form>
-<script src="/receivers.js" defer></script>
 {% endif %}
+<script src="/receivers.js" defer></script>
 {% endif %}

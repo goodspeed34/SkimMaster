@@ -24,12 +24,118 @@
 #include "app/diagnostics.h"
 #include "app/slice_tuning.h"
 #include "app/station.h"
+#include "app/station_lock.h"
 #include "source_offer.h"
 #include "web/common.h"
 #include "web/panel_assets.h"
 
 namespace skim {
 namespace web {
+namespace {
+void RenderGeneralSettings(SmWebContext& ctx, const httplib::Request& req,
+                           httplib::Response& res,
+                           const std::string& error = "",
+                           const std::string& field = "") {
+  const bool advanced = req.path == "/settings/toml";
+  const bool draft = req.method == "POST";
+  Json model{{"admin", true},
+             {"empty", false},
+             {"gallery", false},
+             {"csrf", ctx.token},
+             {"settings_error", Escape(error.c_str())},
+             {"settings_error_field", field},
+             {"settings_load_error", ""},
+             {"settings_advanced", advanced},
+             {"settings_saved", !draft && req.get_param_value("saved") == "1"},
+             {"restart_pending", Json::array()},
+             {"identity_services", Json::array()},
+             {"settings_retry", ""},
+             {"revision", ""},
+             {"config", ""},
+             {"settings_available", false}};
+  try {
+    // Read the revision first so a draft for recovery can never overwrite a
+    // different file that arrived while parsing failed.
+    model["revision"] = SettingsRevision(ctx.config);
+    const auto settings = LoadSettings(ctx.config);
+    model["revision"] = settings.revision;
+    model["settings_available"] = true;
+    model["config"] = Escape(settings.source.c_str());
+    const auto identity = settings.identity.value_or(SmStationIdentity{});
+    for (const auto& [key, value] : {std::pair{"callsign", identity.callsign},
+                                     {"grid", identity.grid},
+                                     {"name", identity.name},
+                                     {"email", identity.email},
+                                     {"listen_address", settings.address},
+                                     {"port", std::to_string(settings.port)},
+                                     {"database", settings.database_setting},
+                                     {"gallery", settings.gallery_setting}}) {
+      const auto shown = draft && !advanced ? req.get_param_value(key) : value;
+      model[key] = Escape(shown.c_str());
+    }
+    model["first_run_wizard"] = draft && !advanced
+                                    ? req.has_param("first_run_wizard")
+                                    : settings.first_run_wizard;
+    if (settings.address != ctx.address || settings.port != ctx.port)
+      model["restart_pending"].push_back("web listener");
+    if (OperationalDatabasePath(settings.database) != ctx.database)
+      model["restart_pending"].push_back("database path");
+    if (std::filesystem::path(settings.gallery) != ctx.gallery)
+      model["restart_pending"].push_back("gallery path");
+    for (const auto& [key, label] : {std::pair{"cluster", "Local DX Cluster"},
+                                     {"psk", "PSK Reporter"},
+                                     {"wsprnet", "WSPRnet"},
+                                     {"rbn", "Reverse Beacon Network"}}) {
+      const auto options = settings.services.value(key, Json::object());
+      if (!options.is_object() || !options.value("enabled", false)) continue;
+      Json fields = Json::array();
+      for (const auto& [name, display, fallback] :
+           {std::tuple{"callsign", "Callsign", identity.callsign},
+            std::tuple{"grid", "Grid", identity.grid},
+            std::tuple{"sign_in", "Sign-in", identity.email},
+            std::tuple{"name", "Operator name", identity.name}}) {
+        if ((std::string_view(name) == "sign_in" ||
+             std::string_view(name) == "name") &&
+            std::string_view(key) != "rbn")
+          continue;
+        const auto value = options.value(name, fallback);
+        fields.push_back({{"label", display},
+                          {"value", Escape(value.c_str())},
+                          {"source", options.contains(name) ? "Override"
+                                     : value.empty()        ? "Unset"
+                                                     : "Station identity"}});
+      }
+      model["identity_services"].push_back(
+          {{"label", label}, {"fields", fields}});
+    }
+  } catch (const std::exception& e) {
+    model["settings_load_error"] = Escape(e.what());
+    model["settings_available"] = false;
+  }
+  if (draft) {
+    const auto revision = req.has_param("retry_revision")
+                              ? req.get_param_value("retry_revision")
+                              : req.get_param_value("revision");
+    if (res.status == 409) model["settings_retry"] = model["revision"];
+    model["revision"] = Escape(revision.c_str());
+    if (advanced)
+      model["config"] = Escape(req.get_param_value("config").c_str());
+  }
+  ctx.Render(*FindPage("general-settings"), std::move(model), res);
+}
+
+std::string Trim(std::string value) {
+  const auto first = value.find_first_not_of(" \t\r\n");
+  if (first == std::string::npos) return {};
+  return value.substr(first, value.find_last_not_of(" \t\r\n") - first + 1);
+}
+
+void Uppercase(std::string& value) {
+  for (auto& ch : value)
+    ch = static_cast<char>(std::toupper(static_cast<unsigned char>(ch)));
+}
+}  // namespace
+
 void RenderWizard(SmWebContext& ctx, const httplib::Request& req,
                   httplib::Response& res, const std::string& error) {
   Json model{{"csrf", ctx.token},
@@ -64,21 +170,109 @@ void RenderWizard(SmWebContext& ctx, const httplib::Request& req,
 
 void RegisterAdminRoutes(httplib::Server& server, SmWebContext& ctx) {
   server.Get(
-      R"(/(settings|general-settings|backup-restore|restart-daemon|wizard|wizard\.html))",
+      R"(/(settings|general-settings|settings/toml|backup-restore|restart-daemon|wizard|wizard\.html))",
       [&](const httplib::Request& req, httplib::Response& res) {
         res.set_header("Cache-Control", "no-store");
         if (req.path == "/wizard" || req.path == "/wizard.html") {
           RenderWizard(ctx, req, res);
           return;
         }
-        auto settings = LoadSettings(ctx.config);
+        if (req.path == "/settings" || req.path == "/general-settings" ||
+            req.path == "/settings/toml") {
+          RenderGeneralSettings(ctx, req, res);
+          return;
+        }
         Json model = {{"admin", true},
                       {"gallery", false},
                       {"csrf", ctx.token},
-                      {"revision", settings.revision},
-                      {"config", Escape(settings.source.c_str())},
                       {"empty", false}};
         ctx.Render(*FindPage(PanelSlug(req.path)), model, res);
+      });
+  server.Post(
+      R"(/(settings|general-settings|settings/toml))",
+      [&](const httplib::Request& req, httplib::Response& res) {
+        const bool advanced = req.path == "/settings/toml";
+        const bool legacy = req.path == "/settings" && req.has_param("config");
+        if (!ctx.ValidateForm(req, res)) {
+          RenderGeneralSettings(ctx, req, res,
+                                "This form expired. Your entries are still "
+                                "here. Review them and save again.");
+          return;
+        }
+        std::string field;
+        try {
+          std::lock_guard<std::mutex> lock(ctx.config_writes);
+          const auto revision = req.has_param("retry_revision")
+                                    ? req.get_param_value("retry_revision")
+                                    : req.get_param_value("revision");
+          if (SettingsRevision(ctx.config) != revision) {
+            res.status = legacy ? 400 : 409;
+            throw std::runtime_error(
+                "Settings changed since you opened this page. Your draft is "
+                "still here. Review the saved settings before applying it.");
+          }
+          if (advanced || legacy) {
+            SaveSettings(ctx.config, req.get_param_value("config"), revision);
+          } else {
+            SmGeneralSettings settings{};
+            settings.identity = {Trim(req.get_param_value("callsign")),
+                                 Trim(req.get_param_value("email")),
+                                 Trim(req.get_param_value("name")),
+                                 Trim(req.get_param_value("grid"))};
+            Uppercase(settings.identity.callsign);
+            Uppercase(settings.identity.grid);
+            field = "listen_address";
+            settings.address = Trim(req.get_param_value("listen_address"));
+            if (settings.address.empty() ||
+                settings.address.find_first_of(" \t\r\n") != std::string::npos)
+              throw std::runtime_error("Enter a hostname or an IP address.");
+            field = "port";
+            settings.port =
+                static_cast<int>(*FormInteger(req, "port", 1, 65535));
+            field = "database";
+            settings.database = req.get_param_value("database");
+            if (Trim(settings.database).empty())
+              throw std::runtime_error("Enter the database path.");
+            field = "gallery";
+            settings.gallery = req.get_param_value("gallery");
+            if (Trim(settings.gallery).empty())
+              throw std::runtime_error("Enter the gallery path.");
+            settings.first_run_wizard = req.has_param("first_run_wizard");
+            field.clear();
+            UpdateGeneralSettings(ctx.config, revision, settings);
+          }
+          res.set_redirect("/general-settings?saved=1", 303);
+        } catch (const std::exception& e) {
+          if (res.status != 409) res.status = 400;
+          std::string message = e.what();
+          if (message == "configuration changed; reload and retry" && !legacy) {
+            res.status = 409;
+            message =
+                "Settings changed while saving. Review the current settings "
+                "before applying your draft.";
+          }
+          if (!advanced && !legacy && message.find("invalid station ") == 0) {
+            if (message == "invalid station callsign") {
+              field = "callsign";
+              message =
+                  "Enter a callsign of 2 to 16 characters using letters, "
+                  "digits, / or -.";
+            } else if (message == "invalid station Maidenhead grid") {
+              field = "grid";
+              message =
+                  "Enter a four- or six-character Maidenhead grid, such as "
+                  "FN42 or FN42AB.";
+            } else if (message == "invalid station email") {
+              field = "email";
+              message =
+                  "Enter a valid email address of at most 254 characters.";
+            } else if (message == "invalid station name") {
+              field = "name";
+              message = "Enter an operator name of at most 128 bytes.";
+            }
+          }
+          RenderGeneralSettings(ctx, req, res, message, field);
+        }
       });
   server.Post("/restart-station", [&](const httplib::Request& req,
                                       httplib::Response& res) {
@@ -95,8 +289,8 @@ void RegisterAdminRoutes(httplib::Server& server, SmWebContext& ctx) {
       res.set_content(error.what(), "text/plain; charset=utf-8");
     }
   });
-  server.Post(R"(/(settings|wizard|restart))", [&](const httplib::Request& req,
-                                                   httplib::Response& res) {
+  server.Post(R"(/(wizard|restart))", [&](const httplib::Request& req,
+                                          httplib::Response& res) {
     if (!ctx.ValidateForm(req, res)) return;
     try {
       if (req.path == "/restart")
@@ -104,26 +298,25 @@ void RegisterAdminRoutes(httplib::Server& server, SmWebContext& ctx) {
       else {
         std::lock_guard<std::mutex> lock(ctx.config_writes);
         auto revision = req.get_param_value("revision");
-        if (req.path == "/wizard") {
-          SmStationIdentity identity{
-              req.get_param_value("callsign"), req.get_param_value("email"),
-              req.get_param_value("name"), req.get_param_value("grid")};
-          for (char& ch : identity.callsign)
-            ch =
-                static_cast<char>(std::toupper(static_cast<unsigned char>(ch)));
-          auto mode = req.get_param_value("mode");
-          SaveWizard(
-              ctx.config, revision, identity, req.get_param_value("receiver"),
-              req.get_param_value("device"),
-              static_cast<int>(*FormInteger(req, "rate", 12000, 6144000)),
-              IsSkimmer(mode) ? std::nullopt
-                              : FormInteger(req, "dial_hz", 1, 1000000000000LL),
-              mode, FormInteger(req, "center_hz", 1, 1000000000000LL, true),
-              FormInteger(req, "utc_ms", 0, 100000000000000LL, true),
-              req.get_param_value("repeat") == "on");
-        } else {
-          SaveSettings(ctx.config, req.get_param_value("config"), revision);
-        }
+        SmStationIdentity identity{
+            req.get_param_value("callsign"), req.get_param_value("email"),
+            req.get_param_value("name"), req.get_param_value("grid")};
+        Uppercase(identity.callsign);
+        auto mode = req.get_param_value("mode");
+        SaveWizard(
+            ctx.config, revision, identity, req.get_param_value("receiver"),
+            req.get_param_value("device"),
+            static_cast<int>(*FormInteger(req, "rate", 12000, 6144000)),
+            IsSkimmer(mode) ? std::nullopt
+                            : FormInteger(req, "dial_hz", 1, 1000000000000LL),
+            mode, FormInteger(req, "center_hz", 1, 1000000000000LL, true),
+            FormInteger(req, "utc_ms", 0, 100000000000000LL, true),
+            req.get_param_value("repeat") == "on");
+        res.set_redirect(
+            "/receivers?setup=" + httplib::detail::encode_query_param(
+                                      req.get_param_value("receiver")),
+            303);
+        return;
       }
       res.set_redirect("/receivers", 303);
     } catch (const std::exception& e) {

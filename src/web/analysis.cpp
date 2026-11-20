@@ -9,6 +9,7 @@
 #include <string>
 #include <vector>
 
+#include "app/slice_tuning.h"
 #include "core/bands.h"
 #include "web/common.h"
 #include "web/panel_assets.h"
@@ -86,6 +87,53 @@ const char kNoiseFloorSql[] =
     "coalesce((SELECT printf('%.1f dBFS/Hz',n.floor_db) FROM noise_floor n "
     "WHERE n.receiver=w.id AND n.utc>=unixepoch()-180 ORDER BY n.utc DESC "
     "LIMIT 1),'—')";
+
+const char kCurrentSpectrumSql[] =
+    "s.utc BETWEEN unixepoch()-30 AND unixepoch()+1 AND EXISTS("
+    "SELECT 1 FROM workers w WHERE w.id=s.receiver AND w.kind='receiver' "
+    "AND w.state='running' AND s.utc>=w.started_at "
+    "AND json_extract(w.plan,'$.center_hz')=s.center_hz "
+    "AND json_extract(w.plan,'$.rate')=s.rate)";
+
+void RenderChartPage(SmWebContext& ctx, const SmReferencePage& page,
+                     const httplib::Request& req, httplib::Response& res,
+                     const std::string& error) {
+  const auto receiver = req.get_param_value("receiver");
+  const bool spectrum = std::string_view(page.slug) == "spectrum-waterfall";
+  Json model{
+      {"admin", false},
+      {"gallery", false},
+      {"empty", false},
+      {"chart", spectrum ? "spectrum" : "map"},
+      {"csrf", ctx.token},
+      {"selected_receiver", Escape(receiver.c_str())},
+      {"tune_error", Escape(error.c_str())},
+      {"tune_notice", ""},
+      {"tune_mode", Escape(req.get_param_value("mode").c_str())},
+      {"tune_frequency", Escape(req.get_param_value("frequency").c_str())},
+      {"tune_modes", {"CW", "RTTY", "FT8", "FT4", "WSPR", "SSTV"}},
+      {"revision", ""},
+      {"rows", Json::array()},
+      {"columns", Json::array()}};
+  if (spectrum) {
+    const std::string sources =
+        std::string("SELECT receiver,max(") + kCurrentSpectrumSql +
+        ") FROM spectra s GROUP BY receiver ORDER BY receiver";
+    model["spectrum_receivers"] = Query(ctx.database, sources.c_str());
+    try {
+      model["revision"] = LoadSettings(ctx.config).revision;
+    } catch (const std::exception&) {
+      // Leave the tuning form unavailable until the configuration is repaired.
+    }
+    const auto tuned = req.get_param_value("tuned");
+    if (!tuned.empty())
+      model["tune_notice"] =
+          "Added a " + Escape(tuned.c_str()) + " slice at " +
+          Escape(req.get_param_value("hz").c_str()) +
+          " Hz. The receiver applies the updated allocation automatically.";
+  }
+  ctx.Render(page, std::move(model), res);
+}
 
 void RenderNoiseFloor(SmWebContext& ctx, const SmReferencePage& page,
                       const httplib::Request& req, httplib::Response& res,
@@ -335,9 +383,11 @@ void RegisterAnalysisRoutes(httplib::Server& server, SmWebContext& ctx) {
               "coalesce(json_extract(s.value,'$.center_hz'),"
               "json_extract(s.value,'$.dial_hz'),"
               "json_extract(w.plan,'$.center_hz')) "
-              "ELSE json_extract(s.value,'$.dial_hz')+1500 END,"
+              "WHEN json_extract(s.value,'$.mode') IN ('FT8','FT4','WSPR') "
+              "THEN json_extract(s.value,'$.dial_hz')+1500 "
+              "ELSE json_extract(s.value,'$.dial_hz') END,"
               "CASE json_extract(s.value,'$.mode') WHEN 'CW' THEN 48000 "
-              "WHEN 'RTTY' THEN 12000 ELSE 3000 END "
+              "ELSE 12000 END "
               "FROM workers w,json_each(w.plan,'$.slices') s "
               "WHERE w.kind='receiver' AND w.state='running' AND w.id=?1 "
               "ORDER BY s.key",
@@ -351,11 +401,32 @@ void RegisterAnalysisRoutes(httplib::Server& server, SmWebContext& ctx) {
     try {
       const auto receiver = req.get_param_value("receiver");
       const auto mode = req.get_param_value("mode");
-      if (mode != "CW" && mode != "RTTY" && mode != "FT8" && mode != "FT4" &&
-          mode != "WSPR")
+      if (!IsSkimmer(mode) && !IsTimedDecoder(mode) && mode != "SSTV")
         throw std::runtime_error("select a decoder mode");
       const auto frequency = *FormInteger(req, "frequency", 1, kMaxFrequency);
       std::lock_guard<std::mutex> lock(ctx.config_writes);
+      const auto query = std::string(
+                             "SELECT center_hz,rate FROM spectra s WHERE "
+                             "receiver=?1 AND ") +
+                         kCurrentSpectrumSql + " ORDER BY utc DESC LIMIT 1";
+      const auto readings =
+          Query(ctx.database, query.c_str(), {receiver}, false);
+      if (readings.empty())
+        throw std::runtime_error(
+            "Wait for a current IQ spectrum from the selected receiver, or "
+            "configure a slice in the receiver editor.");
+      const auto center = std::stoll(readings[0][0].get<std::string>());
+      const auto rate = std::stoll(readings[0][1].get<std::string>());
+      if (center != *FormInteger(req, "sample_center", 1, kMaxFrequency) ||
+          rate != *FormInteger(req, "sample_rate", 1, 6144000))
+        throw std::runtime_error(
+            "The receiver retuned. Check the new spectrum before adding the "
+            "slice.");
+      const auto capture = frequency + (IsTimedDecoder(mode) ? 1500 : 0);
+      if (2 * std::abs(capture - center) + (mode == "CW" ? 48000 : 12000) >
+          rate)
+        throw std::runtime_error(
+            "The slice does not fit in the receiver's current bandwidth.");
       AddSlice(ctx.config, req.get_param_value("revision"), receiver,
                {mode, frequency});
       res.set_redirect("/spectrum-waterfall?receiver=" +
@@ -365,8 +436,8 @@ void RegisterAnalysisRoutes(httplib::Server& server, SmWebContext& ctx) {
                        303);
     } catch (const std::exception& error) {
       res.status = 400;
-      res.set_content(std::string("Could not add the slice: ") + error.what(),
-                      "text/plain; charset=utf-8");
+      RenderChartPage(ctx, *FindPage("spectrum-waterfall"), req, res,
+                      std::string("Could not add the slice: ") + error.what());
     }
   });
   server.Get(
