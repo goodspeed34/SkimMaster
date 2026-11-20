@@ -1,9 +1,7 @@
 # Capture CW over TCI from an emulated two-receiver server. Receiver 0
 # carries a decoy; receiver 1 carries the wanted signal, then is retuned
 # from the radio's side, which must hold IQ until it returns.
-import array
 from contextlib import closing
-import math
 from pathlib import Path
 import sqlite3
 import subprocess
@@ -11,34 +9,8 @@ import sys
 import tempfile
 import threading
 
+from morse_iq import keyed
 from tci_emulator import TciServer
-
-MORSE = dict(A=".-", B="-...", C="-.-.", D="-..", E=".", F="..-.", G="--.",
-             H="....", I="..", J=".---", K="-.-", L=".-..", M="--", N="-.",
-             O="---", P=".--.", Q="--.-", R=".-.", S="...", T="-", U="..-",
-             V="...-", W=".--", X="-..-", Y="-.--", Z="--..")
-MORSE.update({str(d): s for d, s in enumerate(
-    ["-----", ".----", "..---", "...--", "....-", ".....", "-....", "--...",
-     "---..", "----."])})
-RATE = 48000
-DOT = round(RATE * 1.2 / 22)
-
-
-def keyed(text, offset_hz):
-    tone = array.array("f")
-    for i in range(DOT):
-        phase = math.tau * offset_hz * i / RATE
-        tone.extend((.4 * math.cos(phase), .4 * math.sin(phase)))
-    quiet = array.array("f", bytes(DOT * 8))
-    out = quiet * 15
-    for word in text.split():
-        for ch in word:
-            for mark in MORSE[ch]:
-                out += tone * (1 if mark == "." else 3) + quiet
-            out += quiet * 2
-        out += quiet * 4
-    return out + quiet * 50
-
 
 def chunks(samples, size=4096):
     for start in range(0, len(samples), size):

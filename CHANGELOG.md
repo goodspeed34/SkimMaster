@@ -8,6 +8,10 @@ ABIs are versioned separately by their exported symbol names.
 
 ### Added
 
+- FlexRadio receiver module (`flex:host[:port]/CHANNEL`): LAN discovery,
+  per-radio DAX IQ channels 1–4, a dedicated panadapter per capture, VITA-49
+  DAX IQ over UDP with loss detection, and an IQ hold when SmartSDR retunes
+  the panadapter.
 - TCI receiver module (`tci:host:port/N`) for ExpertSDR, SunSDR and other TCI
   servers: probe lists each receiver, capture sets the IQ rate and DDS center
   and streams 16/24/32-bit integer or float IQ. DDS changes from other

@@ -17,6 +17,7 @@ from urllib.error import HTTPError
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 from process_control import popen, stop
+from flex_emulator import FlexRadio
 from tci_emulator import TciServer
 
 with tempfile.TemporaryDirectory() as directory:
@@ -464,6 +465,33 @@ with tempfile.TemporaryDirectory() as directory:
         assert [(f["device"], f["label"]) for f in found] == [
             (f"tci:127.0.0.1:{tci.port}/{rx}", f"SunSDR2PRO receiver {rx} (TCI)")
             for rx in range(2)], found
+
+        flex = FlexRadio()
+        listener = threading.Thread(target=flex.serve_commands, daemon=True)
+        listener.start()
+        found = json.loads(post("/receiver-probe", {**add, "driver": "flex",
+                                                    "target": f"127.0.0.1:{flex.port}"}))
+        assert [(f["device"], f["label"]) for f in found] == [
+            (f"flex:127.0.0.1:{flex.port}/{ch}", f"FLEX-6600 DAX IQ {ch}")
+            for ch in range(1, 5)], found
+        listener.join(5)
+        announcing = threading.Event()
+
+        def announce():
+            while not announcing.wait(.1):
+                flex.announce()
+
+        announcer = threading.Thread(target=announce)
+        announcer.start()
+        try:
+            found = json.loads(post("/receiver-probe", {**add, "driver": "flex",
+                                                        "target": ""}))
+        finally:
+            announcing.set()
+            announcer.join(5)
+            flex.close()
+        assert found and found[0]["device"] == f"flex:127.0.0.1:{flex.port}/1", found
+        assert found[0]["label"] == "FLEX-6600 Shack DAX IQ 1", found
 
         receiver = {"action": "save", "receiver": "Desk & IQ", "device": "wav:short IQ.wav",
                     "rate": "48000", "enabled": "on", "center_hz": "7050000",
