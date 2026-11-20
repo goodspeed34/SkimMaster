@@ -2,8 +2,10 @@
 
 #include <nng/nng.h>
 #include <nng/protocol/pair1/pair.h>
+#include <readerwritercircularbuffer.h>
 
 #include <atomic>
+#include <chrono>
 #include <cmath>
 #include <complex>
 #include <cstring>
@@ -12,7 +14,10 @@
 #include <iostream>
 #include <memory>
 #include <nlohmann/json.hpp>
+#include <optional>
 #include <thread>
+#include <utility>
+#include <vector>
 
 #include "app/instance.h"
 #include "app/live.h"
@@ -38,6 +43,11 @@ struct SmSliceSocket {
 struct SmHeader {
   uint64_t sequence, generation;
 };
+struct SmWidebandBlock {
+  uint64_t generation;
+  std::vector<std::complex<float>> samples;
+};
+constexpr auto kSlicerWait = std::chrono::milliseconds(25);
 // A windowed-sinc FIR tabulated at 64 fractional input phases. Integer
 // phase accumulation keeps recorded slot boundaries stable across blocks.
 class SmFractionalDecimator {
@@ -289,9 +299,7 @@ void SmReceiver::RunWideband() const {
   const bool live = !IsReplayReceiver(device);
   CollectDecoderResults(
       [&](const std::string& endpoint, const std::atomic_bool& stop) {
-        SmSpectrum spectrum(database, id, rate, center);
-        do {
-          // A new pass starts with fresh channelizer and slot state.
+        auto make_pipelines = [&] {
           std::vector<std::unique_ptr<SmSlicePipeline>> pipelines;
           for (const auto* slice : slices()) {
             std::optional<SmDecoderRoute> route;
@@ -300,29 +308,92 @@ void SmReceiver::RunWideband() const {
             pipelines.push_back(std::make_unique<SmSlicePipeline>(
                 *slice, center, root, std::move(route)));
           }
-          const auto started = std::chrono::steady_clock::now();
-          uint64_t frames = 0;
-          ReadReceiver(
-              capture,
-              [&](const std::complex<float>* data, size_t n) {
-                if (stop.load())
-                  throw std::runtime_error("slot collection stopped");
-                if (repeat) {
-                  frames += n;
-                  auto elapsed = std::chrono::duration<double>(
-                      static_cast<double>(frames) / rate);
-                  std::this_thread::sleep_until(started + elapsed);
+          return pipelines;
+        };
+        // The plugin owns its callback buffer. Queue copies so the capture
+        // thread can return while the slicer is still processing the block.
+        moodycamel::BlockingReaderWriterCircularBuffer<
+            std::optional<SmWidebandBlock>>
+            input{8};
+        std::atomic_bool cancel_slicer{false};
+        SmSpectrum spectrum(database, id, rate, center);
+        auto slicer = std::async(
+            std::launch::async, [&, initial = make_pipelines(),
+                                 spectrum = std::move(spectrum)]() mutable {
+              auto pipelines = std::move(initial);
+              for (;;) {
+                uint64_t generation = 0;
+                std::optional<SmWidebandBlock> block;
+                for (;;) {
+                  if (stop.load() || cancel_slicer.load()) return;
+                  if (!input.wait_dequeue_timed(block, kSlicerWait)) continue;
+                  if (!block) break;
+                  if (block->generation != generation) {
+                    for (auto& pipeline : pipelines) pipeline->Gap();
+                    generation = block->generation;
+                  }
+                  const auto& samples = block->samples;
+                  spectrum.Observe(samples.data(), samples.size());
+                  for (auto& pipeline : pipelines)
+                    pipeline->Push(samples.data(), samples.size());
                 }
-                spectrum.Observe(data, n);
-                for (auto& pipeline : pipelines) pipeline->Push(data, n);
-              },
-              [&] {
-                if (stop.load())
-                  throw std::runtime_error("slot collection stopped");
-                for (auto& pipeline : pipelines) pipeline->Gap();
-              });
-          for (auto& pipeline : pipelines) pipeline->Finish();
-        } while (repeat && !stop.load());
+                for (auto& pipeline : pipelines) pipeline->Finish();
+                if (!repeat || stop.load() || cancel_slicer.load()) return;
+                // File wraps begin with fresh channelizer and slot state.
+                pipelines = make_pipelines();
+              }
+            });
+        auto check_slicer = [&] {
+          if (slicer.wait_for(std::chrono::seconds(0)) ==
+              std::future_status::ready) {
+            slicer.get();
+            throw std::runtime_error("slicer stopped before end of IQ");
+          }
+          if (stop.load()) throw std::runtime_error("slot collection stopped");
+        };
+        auto enqueue_wait = [&](std::optional<SmWidebandBlock> block) {
+          while (!input.wait_enqueue_timed(std::move(block), kSlicerWait))
+            check_slicer();
+        };
+        size_t drops = 0;
+        try {
+          do {
+            const auto started = std::chrono::steady_clock::now();
+            uint64_t frames = 0, generation = 0;
+            ReadReceiver(
+                capture,
+                [&](const std::complex<float>* data, size_t n) {
+                  check_slicer();
+                  if (!n) return;
+                  if (repeat) {
+                    frames += n;
+                    auto elapsed = std::chrono::duration<double>(
+                        static_cast<double>(frames) / rate);
+                    std::this_thread::sleep_until(started + elapsed);
+                  }
+                  SmWidebandBlock block{generation, {data, data + n}};
+                  if (!live) {
+                    enqueue_wait(std::move(block));
+                  } else if (!input.try_enqueue(std::move(block))) {
+                    ++generation;
+                    ++drops;
+                  }
+                },
+                [&] {
+                  check_slicer();
+                  if (!live) throw std::runtime_error("gap in recorded IQ");
+                  ++generation;
+                });
+            enqueue_wait(std::nullopt);
+          } while (repeat && !stop.load());
+          slicer.get();
+        } catch (...) {
+          cancel_slicer = true;
+          throw;
+        }
+        if (drops)
+          std::cerr << "Dropped " << drops << " wideband IQ blocks for " << id
+                    << '\n';
       },
       [&](SmDecoderResult result) {
         const auto decoder = instance().find_decoder(result.decoder_id);

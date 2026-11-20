@@ -61,6 +61,15 @@ with tempfile.TemporaryDirectory() as directory:
         ).fetchall()
         assert len(matches) == 2 and matches[1][0] - matches[0][0] == 9000, matches
 
+    # A receiver failure must wake the slicer even when capture never enqueues EOF.
+    bad_config = root / "wrong-rate.json"
+    bad_plan = json.loads(dual_config.read_text())
+    bad_plan["rate"] = 48000
+    bad_config.write_text(json.dumps(bad_plan))
+    bad = subprocess.run([tools, "--wideband", bad_config], timeout=10,
+                         capture_output=True, text=True)
+    assert bad.returncode and "does not match IQ WAV rate" in bad.stderr, bad.stderr
+
     # A single slot from stdin completes after flushing the decoder filter.
     stdin_iq = array.array("f")
     for sample, value in enumerate(pcm):
