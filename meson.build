@@ -51,15 +51,15 @@ src_includes = include_directories('src')
 module_suffix = host_machine.system() == 'windows' ? 'dll' : 'so'
 build_flags = ['-DCPPHTTPLIB_OPENSSL_SUPPORT', '-DSKIM_VERSION="' + meson.project_version() + '"']
 build_flags += '-DSKIM_MODULE_SUFFIX=".' + module_suffix + '"'
-ftx_plugin = shared_module('decoderftx', 'src/decoder/plugin.cpp', 'src/decoder/ftx.cpp',
+ftx_plugin = shared_module('decoderftx', 'src/decoder/ftx.cpp',
   include_directories : src_includes,
   dependencies : decoder_deps + [ftx.get_variable('ftx_dep')],
   cpp_args : build_flags, name_prefix : 'lib', name_suffix : module_suffix,
   install : true, install_dir : get_option('bindir'))
-wspr_plugin = shared_module('decoderwspr', 'src/decoder/plugin.cpp', 'src/decoder/wspr.cpp',
+wspr_plugin = shared_module('decoderwspr', 'src/decoder/wspr.cpp',
   include_directories : src_includes,
   dependencies : decoder_deps + [csdr_dep, wspr.get_variable('wspr_dep')],
-  cpp_args : build_flags + ['-DSKIM_WSPR'],
+  cpp_args : build_flags,
   name_prefix : 'lib', name_suffix : module_suffix, install : true, install_dir : get_option('bindir'))
 
 radio_modules = []
@@ -109,7 +109,7 @@ sources = files(
   'src/app/station.cpp',
   'src/app/wideband.cpp',
   'src/core/clock_health.cpp',
-  'src/decoder/loader.cpp',
+  'src/decoder/session.cpp',
   'src/decoder/slot.cpp',
   'src/decoder/sstv.cpp',
   'src/decoder/text_modes.cpp',

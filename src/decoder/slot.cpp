@@ -4,6 +4,9 @@
 
 #include <memory>
 #include <stdexcept>
+#include <utility>
+
+#include "decoder/session.h"
 
 namespace skim {
 int SlotSamples(const std::string& mode) {
@@ -25,7 +28,26 @@ std::vector<SmSpot> DecodeSlot(const std::string& mode, const char* path,
   if (sf_readf_float(file.get(), audio.data(), samples) != samples)
     throw std::runtime_error("short audio read");
 
-  return DecodeAudio(mode, std::move(audio), dial, utc_ms);
+  std::vector<SmSpot> spots;
+  CollectDecoderResults(
+      [&](const std::string& endpoint, const std::atomic_bool& stop) {
+        SmSlotDecoderSession session(mode, {"file", endpoint, stop}, 12000,
+                                     SmSampleType::MonoAudio);
+        session.Submit({utc_ms, std::move(audio)}, true);
+        session.Finish();
+      },
+      [&](SmDecoderResult result) {
+        spots = std::move(result.spots);
+        ResolveSlotFrequencies(spots, dial);
+      });
+  return spots;
+}
+
+void ResolveSlotFrequencies(std::vector<SmSpot>& spots, int64_t reference_hz) {
+  for (auto& spot : spots) {
+    spot.frequency += reference_hz;
+    if (spot.wspr) spot.wspr->dial = reference_hz;
+  }
 }
 
 }  // namespace skim

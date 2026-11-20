@@ -1,3 +1,5 @@
+#include "decoder/session.h"
+
 #include <nng/nng.h>
 #include <nng/protocol/reqrep0/rep.h>
 
@@ -7,8 +9,6 @@
 #include <stdexcept>
 
 #include "decoder/result_wire.h"
-#include "decoder/session.h"
-#include "decoder/slot.h"
 #include "dsp/fft_lock.h"
 
 namespace skim {
@@ -128,30 +128,4 @@ void CollectDecoderResults(
   producer.get();
 }
 
-void ResolveSlotFrequencies(std::vector<SmSpot>& spots, int64_t reference_hz) {
-  for (auto& spot : spots) {
-    spot.frequency += reference_hz;
-    if (spot.wspr) spot.wspr->dial = reference_hz;
-  }
-}
-
-std::vector<SmSpot> DecodeAudio(const std::string& mode,
-                                std::vector<float> audio, int64_t dial,
-                                int64_t utc_ms) {
-  if (audio.size() != static_cast<size_t>(SlotSamples(mode)))
-    throw std::runtime_error("incomplete slot");
-  std::vector<SmSpot> spots;
-  CollectDecoderResults(
-      [&](const std::string& endpoint, const std::atomic_bool& stop) {
-        SmSlotDecoderSession session(mode, {"file", endpoint, stop}, 12000,
-                                     SmSampleType::MonoAudio);
-        session.Submit({utc_ms, std::move(audio)}, true);
-        session.Finish();
-      },
-      [&](SmDecoderResult result) {
-        spots = std::move(result.spots);
-        ResolveSlotFrequencies(spots, dial);
-      });
-  return spots;
-}
 }  // namespace skim

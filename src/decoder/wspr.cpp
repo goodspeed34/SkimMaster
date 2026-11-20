@@ -3,14 +3,17 @@
 #include <stdexcept>
 #include <vector>
 
-#include "decoder/engines.h"
+#include "decoder/slot_plugin.h"
 extern "C" {
 #include <libcsdr.h>
 #include <wsprd/wsprd.h>
 }
 
 namespace skim {
-std::vector<SmSpot> DecodeWspr(const std::vector<float>& audio) {
+namespace {
+std::vector<SmSpot> DecodeWspr(SmSlotMode, const std::vector<float>& audio,
+                               std::mutex& fft_planner) {
+  std::lock_guard<std::mutex> lock(fft_planner);
   if (audio.size() != 1440000) throw std::runtime_error("incomplete slot");
   // Translate the WSPR USB passband (dial + 1500 Hz) and decimate to 375 Hz.
   constexpr int taps_count = 513, decimation = 32;
@@ -54,4 +57,16 @@ std::vector<SmSpot> DecodeWspr(const std::vector<float>& audio) {
   }
   return spots;
 }
+}  // namespace
 }  // namespace skim
+
+extern "C" SKIM_SLOT_DECODER_EXPORT const skim::SmSlotDecoderPlugin*
+skim_slot_decoder_v2(skim::SmSlotMode mode) {
+  using namespace skim;
+  static const SmBuiltinSlotDecoder wspr(
+      {"WSPR", SKIM_VERSION, "Guenael Jouchet (rtlsdr-wsprd)",
+       "https://github.com/Guenael/rtlsdr-wsprd", SmSlotMode::Wspr, 12000,
+       12000, SmSampleType::MonoAudio},
+      DecodeWspr);
+  return mode == SmSlotMode::Wspr ? &wspr : nullptr;
+}

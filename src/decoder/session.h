@@ -30,6 +30,4 @@ void CollectDecoderResults(
     const std::function<void(const std::string&, const std::atomic_bool&)>&
         produce,
     const std::function<void(SmDecoderResult)>& collect);
-
-void ResolveSlotFrequencies(std::vector<SmSpot>& spots, int64_t reference_hz);
 }  // namespace skim

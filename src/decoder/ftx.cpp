@@ -8,7 +8,7 @@
 #include <stdexcept>
 #include <utility>
 
-#include "decoder/engines.h"
+#include "decoder/slot_plugin.h"
 
 namespace skim {
 namespace {
@@ -19,24 +19,23 @@ std::string Field(const std::string& text, const ftx_message_offsets_t& fields,
   if (pos >= text.size()) return {};
   return text.substr(pos, text.find(' ', pos) - pos);
 }
-}  // namespace
 
-std::vector<SmSpot> DecodeFtx(const std::string& mode,
-                              const std::vector<float>& audio) {
-  int samples = mode == "FT8" ? 180000 : 90000;
+std::vector<SmSpot> DecodeFtx(SmSlotMode mode, const std::vector<float>& audio,
+                              std::mutex&) {
+  int samples = mode == SmSlotMode::Ft8 ? 180000 : 90000;
   if (audio.size() != static_cast<size_t>(samples))
     throw std::runtime_error("incomplete slot");
 
   monitor_t monitor{};
   monitor_config_t config{
       200, 3000, 12000,
-      2,   2,    mode == "FT8" ? FTX_PROTOCOL_FT8 : FTX_PROTOCOL_FT4};
+      2,   2,    mode == SmSlotMode::Ft8 ? FTX_PROTOCOL_FT8 : FTX_PROTOCOL_FT4};
   monitor_init(&monitor, &config);
   std::unique_ptr<monitor_t, decltype(&monitor_free)> cleanup(&monitor,
                                                               monitor_free);
   // ft8_lib searches -10 to +19 symbols around the waterfall origin.
   // Offset the FT4 origin by nine symbols to include late starts within a slot.
-  int origin = mode == "FT4" ? 9 * monitor.block_size : 0;
+  int origin = mode == SmSlotMode::Ft4 ? 9 * monitor.block_size : 0;
   for (int i = origin; i + monitor.block_size <= samples;
        i += monitor.block_size)
     monitor_process(&monitor, audio.data() + i);
@@ -70,4 +69,23 @@ std::vector<SmSpot> DecodeFtx(const std::string& mode,
   }
   return spots;
 }
+}  // namespace
 }  // namespace skim
+
+extern "C" SKIM_SLOT_DECODER_EXPORT const skim::SmSlotDecoderPlugin*
+skim_slot_decoder_v2(skim::SmSlotMode mode) {
+  using namespace skim;
+  static const SmBuiltinSlotDecoder ft4(
+      {"FT4", SKIM_VERSION, "Karlis Goba (ft8_lib)",
+       "https://github.com/kgoba/ft8_lib", SmSlotMode::Ft4, 12000, 12000,
+       SmSampleType::MonoAudio},
+      DecodeFtx);
+  static const SmBuiltinSlotDecoder ft8(
+      {"FT8", SKIM_VERSION, "Karlis Goba (ft8_lib)",
+       "https://github.com/kgoba/ft8_lib", SmSlotMode::Ft8, 12000, 12000,
+       SmSampleType::MonoAudio},
+      DecodeFtx);
+  if (mode == SmSlotMode::Ft4) return &ft4;
+  if (mode == SmSlotMode::Ft8) return &ft8;
+  return nullptr;
+}
