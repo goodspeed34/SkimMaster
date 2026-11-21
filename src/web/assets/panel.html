@@ -234,83 +234,116 @@
 <p class="notice notice-warn"><strong>Station restart required</strong> to apply changes to the {% for item in restart_pending %}{% if not loop.is_first %}, {% endif %}{{ item }}{% endfor %}. <a href="/restart-daemon">Open restart controls</a></p>
 {% endif %}
 {% if settings_advanced %}
-<h2>Advanced TOML</h2>
-<p class="settings-intro"><a href="/general-settings">Back to General Settings</a></p>
 {% if revision != "" %}
-{% if not settings_available %}<p class="settings-intro">Paste a corrected copy of your station TOML to replace the invalid file.</p>{% endif %}
-<form method="post" action="/settings/toml" class="settings-form">
+<form method="post" action="/settings/toml">
   <input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="revision" value="{{ revision }}">
-  <label for="station-toml">Station TOML</label>
-  <textarea id="station-toml" name="config" rows="22" spellcheck="false">{{ config }}</textarea>
-  <div class="settings-actions">
-    {% if settings_retry != "" %}<a href="/settings/toml" target="_blank" rel="noopener">Review current TOML (new tab)</a><button class="btn-primary" name="retry_revision" value="{{ settings_retry }}">Apply draft to reviewed revision</button>
-    {% else %}<button class="btn-primary">Validate and save TOML</button>{% endif %}
+  <div class="table-scroll">
+    <table class="cfg-table">
+      <thead><tr><th><label for="station-toml">Advanced TOML</label></th></tr></thead>
+      <tbody><tr><td>
+        {% if not settings_available %}<p class="settings-intro">Paste a corrected copy of your station TOML to replace the invalid file.</p>{% endif %}
+        <textarea id="station-toml" name="config" rows="22" spellcheck="false">{{ config }}</textarea>
+      </td></tr></tbody>
+    </table>
+  </div>
+  <div class="action-bar">
+    {% if settings_retry != "" %}
+    <button class="btn-native" name="retry_revision" value="{{ settings_retry }}"><b>Apply draft to reviewed revision</b></button>
+    <a href="/settings/toml" target="_blank" rel="noopener">Review current TOML (new tab)</a>
+    {% else %}<button class="btn-native"><b>Validate and save TOML</b></button>{% endif %}
+    <a class="btn-native" href="/general-settings">Back to General Settings</a>
   </div>
 </form>
+{% else %}
+<div class="action-bar"><a href="/general-settings">Back to General Settings</a></div>
 {% endif %}
 {% else if settings_available %}
-<form method="post" action="/general-settings" class="settings-form">
+<form method="post" action="/general-settings">
   <input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="revision" value="{{ revision }}">
-  <fieldset>
-    <legend>Station identity</legend>
-    <p class="settings-intro">Reporting services use this identity when their own settings leave a field blank.</p>
-    <div class="settings-grid">
-      <label>Callsign
-        <input name="callsign" value="{{ callsign }}" maxlength="16" spellcheck="false" autocapitalize="characters"{% if settings_error_field == "callsign" %} aria-invalid="true" aria-describedby="settings-field-error" autofocus{% endif %}>
-      </label>
-      <label>Maidenhead grid
-        <input name="grid" value="{{ grid }}" maxlength="6" spellcheck="false" autocapitalize="characters" aria-describedby="grid-hint{% if settings_error_field == "grid" %} settings-field-error{% endif %}"{% if settings_error_field == "grid" %} aria-invalid="true" autofocus{% endif %}>
-        <small id="grid-hint">For example, FN42 or FN42AB.</small>
-      </label>
-      <label>Operator name <span class="optional">(optional)</span>
-        <input name="name" value="{{ name }}" maxlength="128"{% if settings_error_field == "name" %} aria-invalid="true" aria-describedby="settings-field-error" autofocus{% endif %}>
-      </label>
-      <label>Operator email <span class="optional">(optional)</span>
-        <input name="email" type="email" value="{{ email }}" maxlength="254"{% if settings_error_field == "email" %} aria-invalid="true" aria-describedby="settings-field-error" autofocus{% endif %}>
-      </label>
-    </div>
-  </fieldset>
-  <fieldset>
-    <legend>Web listener and storage</legend>
-    <p class="settings-intro">Restart the station to apply changes in this section. Relative paths are resolved from the station TOML directory.</p>
-    <div class="settings-grid">
-      <label>Listen address
-        <input name="listen_address" value="{{ listen_address }}" required spellcheck="false"{% if settings_error_field == "listen_address" %} aria-invalid="true" aria-describedby="settings-field-error" autofocus{% endif %}>
-      </label>
-      <label>HTTP port
-        <input name="port" inputmode="numeric" pattern="[0-9]{1,5}" value="{{ port }}" required{% if settings_error_field == "port" %} aria-invalid="true" aria-describedby="settings-field-error" autofocus{% endif %}>
-      </label>
-      <label>Database path
-        <input name="database" value="{{ database }}" required spellcheck="false"{% if settings_error_field == "database" %} aria-invalid="true" aria-describedby="settings-field-error" autofocus{% endif %}>
-      </label>
-      <label>SSTV gallery path
-        <input name="gallery" value="{{ gallery }}" required spellcheck="false"{% if settings_error_field == "gallery" %} aria-invalid="true" aria-describedby="settings-field-error" autofocus{% endif %}>
-      </label>
-    </div>
-  </fieldset>
-  <fieldset>
-    <legend>First-run setup</legend>
-    <label class="settings-toggle"><input type="checkbox" name="first_run_wizard"{% if first_run_wizard %} checked{% endif %}> Open Setup Wizard when no receivers are configured</label>
-  </fieldset>
-  <div class="settings-actions">
-    {% if settings_retry != "" %}<a href="/general-settings" target="_blank" rel="noopener">Review current settings (new tab)</a><button class="btn-primary" name="retry_revision" value="{{ settings_retry }}">Apply draft to reviewed revision</button>
-    {% else %}<button class="btn-primary">Save General Settings</button>{% endif %}
+  <div class="table-scroll">
+    <table class="cfg-table settings-fields" aria-labelledby="station-identity-heading">
+      <colgroup><col><col></colgroup>
+      <thead><tr><th id="station-identity-heading" colspan="2">Station Identity</th></tr></thead>
+      <tbody>
+        <tr>
+          <td class="label-col"><label for="settings-callsign">Callsign</label></td>
+          <td><input id="settings-callsign" type="text" name="callsign" value="{{ callsign }}" size="16" maxlength="16" spellcheck="false" autocapitalize="characters"{% if settings_error_field == "callsign" %} aria-invalid="true" aria-describedby="settings-field-error" autofocus{% endif %}></td>
+        </tr>
+        <tr>
+          <td class="label-col"><label for="settings-grid">Maidenhead Grid</label></td>
+          <td><input id="settings-grid" type="text" name="grid" value="{{ grid }}" size="8" maxlength="6" spellcheck="false" autocapitalize="characters" aria-describedby="grid-hint{% if settings_error_field == "grid" %} settings-field-error{% endif %}"{% if settings_error_field == "grid" %} aria-invalid="true" autofocus{% endif %}>
+            <span class="hint-inline" id="grid-hint">For example, FN42 or FN42AB.</span></td>
+        </tr>
+        <tr>
+          <td class="label-col"><label for="settings-name">Operator Name</label></td>
+          <td><input id="settings-name" type="text" name="name" value="{{ name }}" size="28" maxlength="128" aria-describedby="name-hint{% if settings_error_field == "name" %} settings-field-error{% endif %}"{% if settings_error_field == "name" %} aria-invalid="true" autofocus{% endif %}>
+            <span class="hint-inline" id="name-hint">Optional</span></td>
+        </tr>
+        <tr>
+          <td class="label-col"><label for="settings-email">Operator Email</label></td>
+          <td><input id="settings-email" type="email" name="email" value="{{ email }}" size="28" maxlength="254" aria-describedby="email-hint{% if settings_error_field == "email" %} settings-field-error{% endif %}"{% if settings_error_field == "email" %} aria-invalid="true" autofocus{% endif %}>
+            <span class="hint-inline" id="email-hint">Optional</span></td>
+        </tr>
+        <tr><td colspan="2">Reporting services use this identity when their own settings leave a field blank.</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="table-scroll">
+    <table class="cfg-table settings-fields" aria-labelledby="listener-storage-heading">
+      <colgroup><col><col></colgroup>
+      <thead><tr><th id="listener-storage-heading" colspan="2">Web Listener and Storage</th></tr></thead>
+      <tbody>
+        <tr>
+          <td class="label-col"><label for="settings-listen-address">Listen Address</label></td>
+          <td><input id="settings-listen-address" type="text" name="listen_address" value="{{ listen_address }}" size="28" required spellcheck="false"{% if settings_error_field == "listen_address" %} aria-invalid="true" aria-describedby="settings-field-error" autofocus{% endif %}></td>
+        </tr>
+        <tr>
+          <td class="label-col"><label for="settings-port">HTTP Port</label></td>
+          <td><input id="settings-port" type="text" name="port" inputmode="numeric" pattern="[0-9]{1,5}" value="{{ port }}" size="6" required{% if settings_error_field == "port" %} aria-invalid="true" aria-describedby="settings-field-error" autofocus{% endif %}></td>
+        </tr>
+        <tr>
+          <td class="label-col"><label for="settings-database">Database Path</label></td>
+          <td><input id="settings-database" type="text" name="database" value="{{ database }}" size="36" required spellcheck="false" aria-describedby="settings-path-hint{% if settings_error_field == "database" %} settings-field-error{% endif %}"{% if settings_error_field == "database" %} aria-invalid="true" autofocus{% endif %}></td>
+        </tr>
+        <tr>
+          <td class="label-col"><label for="settings-gallery">SSTV Gallery Path</label></td>
+          <td><input id="settings-gallery" type="text" name="gallery" value="{{ gallery }}" size="36" required spellcheck="false" aria-describedby="settings-path-hint{% if settings_error_field == "gallery" %} settings-field-error{% endif %}"{% if settings_error_field == "gallery" %} aria-invalid="true" autofocus{% endif %}></td>
+        </tr>
+        <tr><td colspan="2" id="settings-path-hint">Relative paths are resolved from the station TOML directory. Restart the station to apply changes in this section.</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="table-scroll">
+    <table class="cfg-table settings-fields" aria-labelledby="first-run-heading">
+      <colgroup><col><col></colgroup>
+      <thead><tr><th id="first-run-heading" colspan="2">First-run Setup</th></tr></thead>
+      <tbody><tr>
+        <td class="label-col">Setup Wizard</td>
+        <td><label><input type="checkbox" name="first_run_wizard"{% if first_run_wizard %} checked{% endif %}> Open Setup Wizard when no receivers are configured</label></td>
+      </tr></tbody>
+    </table>
+  </div>
+  <div class="action-bar">
+    {% if settings_retry != "" %}
+    <button class="btn-native" name="retry_revision" value="{{ settings_retry }}"><b>Apply draft to reviewed revision</b></button>
+    <a href="/general-settings" target="_blank" rel="noopener">Review current settings (new tab)</a>
+    {% else %}<button class="btn-native"><b>Save General Settings</b></button>{% endif %}
+    <a class="btn-native" href="/settings/toml">Advanced TOML editor</a>
   </div>
 </form>
 {% if length(identity_services) > 0 %}
-<section class="settings-service-summary" aria-labelledby="service-identity-heading">
-  <h2 id="service-identity-heading">Saved identity for enabled services</h2>
-  <div class="table-scroll">
-    <table class="cfg-table">
-      <thead><tr><th scope="col">Service</th><th scope="col">Field</th><th scope="col">Value</th><th scope="col">Source</th></tr></thead>
-      <tbody>{% for service in identity_services %}{% for field in service.fields %}
-        <tr><td>{{ service.label }}</td><td>{{ field.label }}</td><td>{% if field.value != "" %}{{ field.value }}{% else %}—{% endif %}</td><td>{{ field.source }}</td></tr>
-      {% endfor %}{% endfor %}</tbody>
-    </table>
-  </div>
-</section>
+<div class="table-scroll">
+  <table class="cfg-table" aria-labelledby="service-identity-heading">
+    <thead>
+      <tr><th id="service-identity-heading" colspan="4">Saved Identity for Enabled Services</th></tr>
+      <tr><th scope="col">Service</th><th scope="col">Field</th><th scope="col">Value</th><th scope="col">Source</th></tr>
+    </thead>
+    <tbody>{% for service in identity_services %}{% for field in service.fields %}
+      <tr><td>{{ service.label }}</td><td>{{ field.label }}</td><td>{% if field.value != "" %}{{ field.value }}{% else %}—{% endif %}</td><td>{{ field.source }}</td></tr>
+    {% endfor %}{% endfor %}</tbody>
+  </table>
+</div>
 {% endif %}
-<p class="settings-intro"><a href="/settings/toml">Advanced TOML editor</a></p>
 {% else %}
 <p><a class="btn-native" href="/settings/toml">Open TOML recovery</a></p>
 {% endif %}
